@@ -20,11 +20,12 @@ I recommend using `Anaconda <https://www.continuum.io/downloads>`_. Linux setup 
 .. code-block:: bash
 
     conda create -n name_your_environment python=3.4 numpy theano lasagne
+    
     source activate name_your_environment
-    profit
-
+    
+    
 Windows Setup is a little harder. If you don't have theano installed check out my blog post at
-http://www.islandman93.com/2015/04/tutorial-python-34-theano-and-windows-7.html.
+http://www.islandman93.com/2016/04/tutorial-theano-install-on-windows-7-8.html.
 
 After installing dependencies just use python setup.py install.
 
@@ -101,13 +102,16 @@ isn't PEP should be refactored (including my own code).
 
 There are three things I believe are fundamental to this project:
 
-1. Premature optimization is the root of all evil. That being said this code needs to be fast so we don't have to wait
+1.  Premature optimization is the root of all evil. That being said this code needs to be fast so we don't have to wait
 weeks for it to train. Try to be smart about where you put optimizations so that they don't obfuscate your code.
-2. Some of these algorithms can be very complex. Code must be commented/documented and be easily readable.
-3. On the same note as 2. Try to prevent 'spaghetti' code as much as possible. If a learner is composed of
+
+2.  Some of these algorithms can be very complex. Code must be commented/documented and be easily readable.
+
+3.  On the same note as 2. Try to prevent 'spaghetti' code as much as possible. If a learner is composed of
 10 different files it becomes impossible to read or to change just one thing as we so often do in research. Because of
 this I try to keep almost all of the code for a learner in its own file in the run_episode function. This may cause some
 code duplication but makes it easy to read and to change.
+
 
 I'm still pretty new to github, docs, and python tests. I welcome refactoring, advice on folder structure and file
 formats.
