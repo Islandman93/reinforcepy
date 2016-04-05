@@ -102,12 +102,12 @@ isn't PEP should be refactored (including my own code).
 
 There are three things I believe are fundamental to this project:
 
-1.  Premature optimization is the root of all evil. That being said this code needs to be fast so we don't have to wait
+-  Premature optimization is the root of all evil. That being said this code needs to be fast so we don't have to wait
 weeks for it to train. Try to be smart about where you put optimizations so that they don't obfuscate your code.
 
-2.  Some of these algorithms can be very complex. Code must be commented/documented and be easily readable.
+-  Some of these algorithms can be very complex. Code must be commented/documented and be easily readable.
 
-3.  On the same note as 2. Try to prevent 'spaghetti' code as much as possible. If a learner is composed of
+-  On the same note as 2. Try to prevent 'spaghetti' code as much as possible. If a learner is composed of
 10 different files it becomes impossible to read or to change just one thing as we so often do in research. Because of
 this I try to keep almost all of the code for a learner in its own file in the run_episode function. This may cause some
 code duplication but makes it easy to read and to change.
