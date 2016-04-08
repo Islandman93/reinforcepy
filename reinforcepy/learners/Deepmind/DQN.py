@@ -58,7 +58,7 @@ class DQNLearner(BaseLearner):
                 reward += np.clip(env_reward, 0, 1)
 
             # check for terminal
-            terminal = environment.get_episode_over()
+            terminal = environment.get_terminal()
 
             # add experience to memory
             self.exp_replay.add_sample(state, self.action_handler.game_action_to_action_ind(action), reward, terminal)

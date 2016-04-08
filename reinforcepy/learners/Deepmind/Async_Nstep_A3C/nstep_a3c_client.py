@@ -44,7 +44,7 @@ class AsyncNStepA3CLearner(AsyncA3CLearner):
             state_tp1 = np.asarray(emulator.get_gamescreen()/255.0, dtype=np.float32)
 
             # check for terminal
-            terminal = emulator.get_episode_over()
+            terminal = emulator.get_terminal()
 
             # update nstep vars
             rewards.append(reward)
@@ -124,7 +124,7 @@ class AsyncNStepA3CLearner(AsyncA3CLearner):
             state_tp1 = np.asarray(emulator.get_gamescreen()/255.0, dtype=np.float32)
 
             # check for terminal
-            terminal = emulator.get_episode_over()
+            terminal = emulator.get_terminal()
 
             # update nstep vars
             rewards.append(reward)

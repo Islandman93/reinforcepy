@@ -14,35 +14,43 @@ def load_config():
 
     rom_fix = {'experiment_parameters': {'rom': str2byte}}
 
-    parameters = Parameters.fromJSON('onestep_dqn_cfg.json', rom_fix)
-    return [parameters['network_parameters'], parameters['training_parameters'], parameters['learner_parameters']]
+    parameters = Parameters.fromJSON('dqn_cfg.json', rom_fix)
+    return [parameters['network_parameters'], parameters['training_parameters'], parameters['learner_parameters'],
+            parameters['experiment_parameters']]
 
 
-def main(epochs, rom):
+def main(experiment_parameters):
+    experiment_parameters.required(['epochs', 'save_interval', 'rom'])
+
     # setup vars
-    ep_mod = 0.5
-    epoch_def = 50000
+    EPOCH_DEF = 50000  # an epoch is defined as 50,000 steps in the NIPS paper
 
     # load parameters
-    network_parameters, training_parameters, learner_parameters = load_config()
+    network_parameters, training_parameters, learner_parameters, _ = load_config()
 
     # initialize environment and network/learner
-    environment = ALEEnvironment(rom)
+    environment = ALEEnvironment(experiment_parameters.get('rom'))
     network = DQN_NIPS(network_parameters, training_parameters)
     learner = DQNLearner(learner_parameters, network)
     learner.set_legal_actions(environment.get_legal_actions())
     
-    # main loop
+    # main loop to run episodes until enough epochs have been reached
+    # saves every save_interval
     ep_count = 0
     reward_list = list()
     st = time.time()
-    while ep_count < epochs:
+    while learner.step_count < experiment_parameters.get('epochs') * EPOCH_DEF:
         reward = learner.run_episode(environment)
         reward_list.append(reward)
         print("Episode finished", "Reward:", reward, "SPS:", learner.step_count/(time.time() - st), learner.get_status())
-        if learner.step_count > epoch_def * ep_count:
-            # save parameters
-            learner.save("dqn_{0}.pkl".format(ep_count))
-            ep_count += ep_mod
+        if experiment_parameters.get('save_interval') is not None:
+            if learner.step_count > ep_count * EPOCH_DEF:
+                # save parameters
+                learner.save("dqn_{0}.pkl".format(ep_count))
+                ep_count += experiment_parameters.get('save_interval')
     
-    print("Done")
+    print("Done, Total Time:", time.time()-st)
+
+if __name__ == '__main__':
+    _, _, _, experiment_parameters = load_config()
+    main(experiment_parameters)

@@ -18,5 +18,10 @@
       "phi_length": 4,
       "minimum_replay_size": 100,
       "minibatch_size": 32
+  },
+  "experiment_parameters": {
+    "epochs": 1,
+    "save_interval": 0.1,
+    "rom": "D:\\_code\\breakout.bin"
   }
 }

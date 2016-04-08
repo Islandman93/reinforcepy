@@ -20,8 +20,9 @@ def load_config():
             parameters['experiment_parameters']]
 
 
-def main(epochs):
-    network_parameters, training_parameters, learner_parameters, experiment_parameters = load_config()
+def main(experiment_parameters):
+    experiment_parameters.required(['epochs', 'save_interval', 'learner_count', 'rom'])
+    network_parameters, training_parameters, learner_parameters, _ = load_config()
 
     # create initial cnn that will be used as the host
     cnn = AsyncTargetCNNNstep(network_parameters, training_parameters)
@@ -46,7 +47,8 @@ def main(epochs):
     # run the thing and time it
     import time
     st = time.time()
-    host.run(epochs, save_interval=0.1, show_status=True)
+    host.run(experiment_parameters.get('epochs'), save_interval=experiment_parameters.get('save_interval'),
+             show_status=True)
     host.block_until_done()
     et = time.time()
     print('total time', et-st)
@@ -54,4 +56,5 @@ def main(epochs):
 
 # python needs this to run processes
 if __name__ == '__main__':
-    main(.005)
+    _, _, _, experiment_parameters = load_config()
+    main(experiment_parameters)

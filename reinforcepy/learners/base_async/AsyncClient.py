@@ -1,8 +1,7 @@
 from reinforcepy.learners.base_async.PipeCmds import PipeCmds
-from reinforcepy.learners.base_learner import BaseLearner
 
 
-class AsyncClient(BaseLearner):
+class AsyncClient:
     def __init__(self, pipe):
         # client stuff
         self.thread_steps = 0
@@ -41,6 +40,9 @@ class AsyncClient(BaseLearner):
             else:
                 print('Dropping pipe command', pipe_cmd, 'and continuing')
         return pipe_recieved
+
+    def send_stats(self, stats):
+        self.pipe.send((PipeCmds.ClientSendingStats, stats))
 
 
 from multiprocessing import Process

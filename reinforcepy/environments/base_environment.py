@@ -28,7 +28,7 @@ class BaseEnvironment(metaclass=ABCMeta):
         """
         pass
 
-    def get_episode_over(self):
+    def get_terminal(self):
         """
         Tests whether the environment episode is over
 

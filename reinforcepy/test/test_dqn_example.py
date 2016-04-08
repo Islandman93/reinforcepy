@@ -8,10 +8,11 @@ from os.path import splitext
 import os
 import sys
 import pytest
-__author__ = 'Lasagne Contributors'
+from reinforcepy.handlers import Parameters
 
-cwd = os.getcwd()
-EXAMPLES_DIR = join(dirname(dirname(dirname(__file__))), 'examples/ALE/DQN_Async')
+
+EXAMPLES_DIR = join(dirname(dirname(dirname(__file__))), 'examples/ALE/DQN')
+
 
 def _example_modules():
     paths = glob(join(EXAMPLES_DIR, "*py"))
@@ -28,13 +29,12 @@ def example(request):
 @pytest.mark.parametrize("module_name", _example_modules())
 @pytest.mark.usefixtures("example")
 def test_example(module_name):
-    try:
-        main = getattr(import_module(module_name), 'main')
-    except ImportError as e:
-        skip_exceptions = ["requires a GPU", "pylearn2", "dnn not available"]
-        if any([text in str(e) for text in skip_exceptions]):
-            pytest.skip(e)
-        else:
-            raise
+    main = getattr(import_module(module_name), 'main')
 
-    main(0.01)
+    exp_parms = {
+        "epochs": 0.005,
+        "rom": b"D:\\_code\\breakout.bin",
+        "save_interval": None
+    }
+    parameters = Parameters('experiment_parameters', exp_parms)
+    main(parameters)

@@ -38,7 +38,10 @@ class ALEEnvironment(BaseEnvironment):
         processedImg = imresize(self.gamescreen[33:-16, :, 0], 0.525, interp='nearest')
         return processedImg
 
-    def get_episode_over(self):
+    def get_state_shape(self):
+        return self.ale.getScreenDims()
+
+    def get_terminal(self):
         return self.ale.game_over()
 
     def get_legal_actions(self):

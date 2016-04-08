@@ -51,11 +51,17 @@ class FrameBuffer:
         buffer_with[0, self.length - 1] = state
         return buffer_with
 
+    def reset(self):
+        """
+        Resets the current buffer with zeros
+        """
+        self.frame_buffer = np.zeros(self.shape, dtype=self.dtype)
+
     def get_buffer(self):
         """
-        Returns the current buffer
+        Returns a copy of the current buffer
         """
-        return self.frame_buffer
+        return np.copy(self.frame_buffer)
 
     def set_buffer(self, frame_buffer):
         """

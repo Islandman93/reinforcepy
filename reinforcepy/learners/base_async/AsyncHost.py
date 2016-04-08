@@ -58,7 +58,7 @@ class AsyncLearnerHost:
                 if learner.poll():
                     self.process_pipe(learner_ind, learner)
 
-            if sum(self.learner_frames) >= ep_count * 4000000:
+            if sum(self.learner_frames) >= ep_count * 4000000 and save_interval is not None:
                 ep_count += save_interval
 
                 # save network parms
