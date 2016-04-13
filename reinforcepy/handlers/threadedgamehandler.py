@@ -15,8 +15,8 @@ class ThreadedGameHandler:
     def __init__(self, environments):
         # setup list of gamehandlers and their locks
         self.environments = list()
-        for emu in range(num_environments):
-            self.environments.append((GameHandler(rom, show_rom, skip_frame), threading.Lock()))
+        for env in environments:
+            self.environments.append((env, threading.Lock()))
 
         # setup thread queue
         self.queue = Queue()
@@ -24,7 +24,7 @@ class ThreadedGameHandler:
         # lock for unlocking/locking environments
         self.environment_lock = threading.Lock()
         self.current_environment = 0
-        self.num_environments = num_environments
+        self.num_environments = len(self.environments)
 
     def async_run_environment(self, learner, done_fn):
         # push to queue
@@ -37,7 +37,7 @@ class ThreadedGameHandler:
         # get an environment
         environment, environment_lock = self.queue.get()
         with environment_lock:
-            total_reward = environment.run_one_game(learner)
+            total_reward = learner.run_episode(environment)
         done_fn(total_reward)
         self.queue.task_done()
 

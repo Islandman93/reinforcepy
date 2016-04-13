@@ -1,6 +1,6 @@
 import pytest
 
-from reinforcepy.handlers.prioritized import Node, BinaryTree
+from reinforcepy.handlers.experience_replay.prioritized import Node, BinaryTree
 
 
 @pytest.fixture(scope='module')
