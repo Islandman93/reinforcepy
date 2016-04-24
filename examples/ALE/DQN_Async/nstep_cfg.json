@@ -8,7 +8,8 @@
   "training_parameters": {
     "learning_rate": 0.0001,
     "epsilon": 1e-6,
-    "training_size": 5
+    "training_size": 5,
+    "gradient_clip": 0.5
   },
   "learner_parameters": {
     "skip_frame": 4,

@@ -2,26 +2,26 @@ import numpy as np
 import theano
 import theano.tensor as T
 import lasagne
-from .dqn_inits import create_NIPS
+from .dqn_inits import create_NIPS_sprag_init
 
 
 class AsyncTargetCNN:
     def __init__(self, network_parms, training_parms):
         network_parms.required(['input_shape'])
-        training_parms.required(['discount', 'epsilon'])
+        training_parms.required(['discount', 'epsilon', 'gradient_clip'])
 
         # setup shared vars
         inp_shape = network_parms.get('input_shape')
         self.state = theano.shared(np.zeros((1, inp_shape[1], inp_shape[2], inp_shape[3]), dtype=theano.config.floatX))
         self.state_tp1 = theano.shared(np.zeros((1, inp_shape[1], inp_shape[2], inp_shape[3]), dtype=theano.config.floatX))
 
-        network_dic = create_NIPS(network_parms)
+        network_dic = create_NIPS_sprag_init(network_parms)
         self.l_in = network_dic['l_in']
         self.l_hid1 = network_dic['l_hid1']
         self.l_hid2 = network_dic['l_hid2']
         self.l_hid3 = network_dic['l_hid3']
         self.l_out = network_dic['l_out']
-        self.target_l_out = create_NIPS(network_parms)['l_out']
+        self.target_l_out = create_NIPS_sprag_init(network_parms)['l_out']
 
         # if initial values in network parms set values
         if network_parms.has('initial_vals'):
@@ -40,6 +40,7 @@ class AsyncTargetCNN:
         # get layer parms
         params = lasagne.layers.get_all_params(self.l_out)
         grads = T.grad(loss, params)
+        grads = lasagne.updates.total_norm_constraint(grads, training_parms.get('gradient_clip'))
         grads.append(loss)
 
         # updates

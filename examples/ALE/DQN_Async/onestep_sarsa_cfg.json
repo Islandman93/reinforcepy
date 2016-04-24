@@ -9,7 +9,8 @@
     "learning_rate": 0.0001,
     "epsilon": 1e-6,
     "training_size": 5,
-    "discount": 0.95
+    "discount": 0.95,
+    "gradient_clip": 1
   },
   "learner_parameters": {
     "skip_frame": 4,
