@@ -72,7 +72,7 @@ class AsyncNStepDQNLearner(BaseAsyncTargetLearner, BaseQLearner):
             # calculate gradients
             loss = self.cnn.accumulate_gradients(self.train_states, self.train_actions, train_rewards)
 
-            self.loss_list.append(float(loss))
+            self.loss_list.append((float(loss), self.thread_steps*self.skip_frame))
 
             # async update step
             global_vars = self.async_update()

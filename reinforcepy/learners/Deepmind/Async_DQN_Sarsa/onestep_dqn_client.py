@@ -27,7 +27,7 @@ class Async1StepDQNLearner(BaseAsyncTargetLearner, BaseQLearner):
         loss = self.cnn.accumulate_gradients(self.frame_buffer.get_buffer(),
                                              self.action_handler.game_action_to_action_ind(action),
                                              reward, self.frame_buffer.get_buffer_with(state_tp1), terminal)
-        self.loss_list.append(float(loss))
+        self.loss_list.append((float(loss), self.thread_steps * self.skip_frame))
         self.thread_steps += 1
         self.total_reward += reward
 
