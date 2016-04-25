@@ -108,9 +108,7 @@ weeks for it to train. Try to be smart about where you put optimizations so that
 Some of these algorithms can be very complex. Code must be commented/documented and be easily readable.
 
 On the same note as 2. Try to prevent 'spaghetti' code as much as possible. If a learner is composed of
-10 different files it becomes impossible to read or to change just one thing as we so often do in research. Because of
-this I try to keep almost all of the code for a learner in its own file in the run_episode function. This may cause some
-code duplication but makes it easy to read and to change.
+10 different files it becomes impossible to read or to change just one thing as we so often do in research.
 
 
 I'm still pretty new to github, docs, and python tests. I welcome refactoring, advice on folder structure and file
