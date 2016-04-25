@@ -1,7 +1,7 @@
 import numpy as np
 from scipy.misc import imresize
 from reinforcepy.environments import BaseEnvironment
-from .ale_python_interface import ALEInterface
+from ale_python_interface import ALEInterface
 
 
 class ALEEnvironment(BaseEnvironment):
@@ -19,7 +19,10 @@ class ALEEnvironment(BaseEnvironment):
     """
     def __init__(self, rom, show_rom=False):
         # set up emulator
-        self.ale = ALEInterface(show_rom)
+        self.ale = ALEInterface()
+
+        if show_rom:
+            self.ale.setBool(b'display_screen', True)
         self.ale.loadROM(rom)
 
         # setup gamescreen object. I think this is faster than recreating an empty each time

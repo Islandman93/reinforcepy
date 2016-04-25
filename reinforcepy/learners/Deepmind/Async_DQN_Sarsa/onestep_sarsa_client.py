@@ -32,7 +32,7 @@ class Async1StepSarsaLearner(BaseAsyncTargetLearner, BaseSarsaLearner):
                                              reward, self.action_handler.game_action_to_action_ind(action_tp1),
                                              self.frame_buffer.get_buffer(), terminal)
         # update loop vars
-        self.loss_list.append(float(loss))
+        self.loss_list.append((float(loss), self.thread_steps * self.skip_frame))
         self.thread_steps += 1
         self.total_reward += reward
 
