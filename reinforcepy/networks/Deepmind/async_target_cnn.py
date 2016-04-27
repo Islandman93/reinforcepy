@@ -3,12 +3,13 @@ import theano
 import theano.tensor as T
 import lasagne
 from .dqn_inits import create_NIPS_sprag_init
+from .dqn_rmsprop import deepmind_rmsprop
 
 
 class AsyncTargetCNN:
     def __init__(self, network_parms, training_parms):
         network_parms.required(['input_shape'])
-        training_parms.required(['discount', 'epsilon', 'gradient_clip'])
+        training_parms.required(['discount', 'gradient_clip'])
 
         # setup shared vars
         inp_shape = network_parms.get('input_shape')
@@ -55,8 +56,7 @@ class AsyncTargetCNN:
 
         network_updates = [self.w1_update, self.b1_update, self.w2_update, self.b2_update,
                            self.w3_update, self.b3_update, self.w4_update, self.b4_update]
-        theano_updates = lasagne.updates.rmsprop(network_updates, params, training_parms.get('learning_rate'),
-                                                 training_parms.get('epsilon'))
+        theano_updates = deepmind_rmsprop(network_updates, params, training_parms.get('learning_rate'))
 
         self._get_grads = self.get_grads_fn(loss_shared_vars, grads)
         self._get_output = theano.function([], net_output)
@@ -95,7 +95,7 @@ class AsyncTargetCNN:
         else:
             for new_grad, acc_grad in zip(grads, self.accumulated_grads):
                 acc_grad += new_grad
-        return loss
+        return loss, grads
 
     def get_output(self, state):
         self.state.set_value(state)
@@ -166,7 +166,7 @@ class AsyncTargetCNNSarsa(AsyncTargetCNN):
         else:
             for new_grad, acc_grad in zip(grads, self.accumulated_grads):
                 acc_grad += new_grad
-        return loss
+        return loss, grads
 
 
 class AsyncTargetCNNNstep(AsyncTargetCNN):
@@ -204,4 +204,4 @@ class AsyncTargetCNNNstep(AsyncTargetCNN):
             self.accumulated_grads = grads
         else:
             raise ValueError("Should not be accumulating gradients for NSTEP, the grad function is sum")
-        return loss
+        return loss, grads
