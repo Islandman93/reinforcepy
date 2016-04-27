@@ -2,10 +2,11 @@ from reinforcepy.learners.base_async.PipeCmds import PipeCmds
 
 
 class AsyncClient:
-    def __init__(self, pipe):
+    def __init__(self, *args):
         # client stuff
         self.thread_steps = 0
-        self.pipe = pipe
+        self.pipe = args[0]
+        self.thread_id = args[1]
         self.done = False
 
     def run(self, environment):
@@ -71,7 +72,7 @@ class AsyncClientProcess(Process):
 
         # create learner and environment
         environment = environment_partial()
-        learner = learner_partial(pipe)
+        learner = learner_partial(pipe, self.pid)
         learner.set_legal_actions(environment.get_legal_actions())
 
         # wait for start command

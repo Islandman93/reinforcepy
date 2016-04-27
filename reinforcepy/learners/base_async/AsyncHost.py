@@ -1,14 +1,7 @@
 from multiprocessing import Pipe
 from reinforcepy.learners.base_async.PipeCmds import PipeCmds
-import json
 import time
 import pickle
-try:
-    from pastalog import Log
-    PASTALOG = True
-except ImportError:
-    print('AsyncHost uses pastalog to log learner loss and reward, without it this functionality is disabled')
-    PASTALOG = False
 
 
 class AsyncLearnerHost:
@@ -49,9 +42,6 @@ class AsyncLearnerHost:
             self.learner_pipes.append(parent_conn)
             self.learner_processes.append(process)
             self.learner_frames.append(0)
-            self.learner_stats.append(list())
-            if PASTALOG:
-                self.logs.append(Log('http://localhost:8120', str(ind)))
 
         self.best_score = 0
 
@@ -73,9 +63,6 @@ class AsyncLearnerHost:
                 with open('async_network_parameters{0}.pkl'.format(sum(self.learner_frames)), 'wb') as out_file:
                     pickle.dump(self.network.get_parameters(), out_file)
 
-                # save score and loss lists
-                self.save_learner_stats()
-
                 if show_status:
                     self.print_status(st)
 
@@ -88,31 +75,8 @@ class AsyncLearnerHost:
             pipe.send((PipeCmds.HostSendingGlobalParameters,
                        (self.network.get_parameters(), {'counter': sum(self.learner_frames)})))
         if pipe_cmd == PipeCmds.ClientSendingStats:
-            self.learner_stats[learner_ind].append(extras)
             if extras['score'] > self.best_score:
                 self.best_score = extras['score']
-
-            if PASTALOG:
-                self.pastalog_learner_stats(learner_ind, extras)
-
-    def save_learner_stats(self):
-        learner_stats = {}
-        for learner_ind, learner_stat in enumerate(self.learner_stats):
-            if len(learner_stat) > 0:
-                scores = list()
-                loss = list()
-                for games in learner_stat:
-                    scores.append(int(games['score']))  # score is np.int which is not serializable
-                    loss += games['loss']
-                learner_stats[learner_ind] = {'scores': scores, 'loss': loss}
-        with open('network_stats.json', 'w') as out_file:
-            json.dump(learner_stats, out_file)
-
-    def pastalog_learner_stats(self, learner_ind, stats):
-        self.logs[learner_ind].post('Score', value=int(stats['score']), step=stats['frames'])
-
-        for loss in stats['loss']:
-            self.logs[learner_ind].post('Loss', value=loss[0], step=loss[1])
 
     def print_status(self, st):
         et = time.time()

@@ -5,8 +5,8 @@ from reinforcepy.learners.base_async import AsyncClient
 
 
 class BaseAsyncTargetLearner(AsyncClient):
-    def __init__(self, learner_parms, network_partial, pipe):
-        super().__init__(pipe)
+    def __init__(self, learner_parms, network_partial, *args):
+        super().__init__(*args)
 
         learner_parms.required(['skip_frame', 'phi_length', 'async_update_step', 'target_update_frames'])
 
@@ -21,11 +21,12 @@ class BaseAsyncTargetLearner(AsyncClient):
 
         self.skip_frame = learner_parms.get('skip_frame')
         self.phi_length = learner_parms.get('phi_length')
-        self.loss_list = list()
 
         self.async_update_step = learner_parms.get('async_update_step')
         self.target_update_frames = learner_parms.get('target_update_frames')
         self.target_update_count = 0
+
+        self.event_list = list()
 
         self.total_reward = 0
 
@@ -43,7 +44,7 @@ class BaseAsyncTargetLearner(AsyncClient):
         return global_vars
 
     def async_send_stats(self):
-        stats = {'score': self.total_reward, 'frames': self.thread_steps * self.skip_frame, 'loss': self.loss_list}
+        stats = {'score': self.total_reward, 'frames': self.thread_steps * self.skip_frame}
         super().send_stats(stats)
 
     def check_update_target(self, total_frames_count):

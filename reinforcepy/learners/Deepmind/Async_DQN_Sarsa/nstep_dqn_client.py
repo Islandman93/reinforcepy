@@ -1,18 +1,21 @@
 import numpy as np
 from .BaseAsyncTargetLearner import BaseAsyncTargetLearner
 from reinforcepy.learners import BaseQLearner
+from reinforcepy.handlers.events import minibatch_end, epoch_end
+import pickle
 
 
 class AsyncNStepDQNLearner(BaseAsyncTargetLearner, BaseQLearner):
-    def __init__(self, learner_parms, network_partial, pipe):
-        super().__init__(learner_parms, network_partial, pipe)
+    def __init__(self, learner_parms, network_partial, *args):
+        super().__init__(learner_parms, network_partial, *args)
 
         learner_parms.required(['discount'])
         self.discount = learner_parms.get('discount')
+        self.reset()
 
     def reset(self):
         self.total_reward = 0
-        self.loss_list = list()
+        self.event_list = list()
 
         # nstep vars, rewards and states are stored in a list of length self.async_update_step
         self.t_start = self.thread_steps
@@ -70,12 +73,12 @@ class AsyncNStepDQNLearner(BaseAsyncTargetLearner, BaseQLearner):
                 self.train_states = self.train_states[0:self.thread_steps - self.t_start]
 
             # calculate gradients
-            loss = self.cnn.accumulate_gradients(self.train_states, self.train_actions, train_rewards)
-
-            self.loss_list.append((float(loss), self.thread_steps*self.skip_frame))
+            loss, grads = self.cnn.accumulate_gradients(self.train_states, self.train_actions, train_rewards)
 
             # async update step
             global_vars = self.async_update()
+
+            self.event_list.append(minibatch_end(self.thread_steps * self.skip_frame, loss))
 
             self.action_handler.anneal_to(global_vars['counter'])
 
@@ -87,5 +90,8 @@ class AsyncNStepDQNLearner(BaseAsyncTargetLearner, BaseQLearner):
 
     def episode_end(self):
         self.async_send_stats()
+        self.event_list.append(epoch_end(self.thread_steps * self.skip_frame, self.total_reward))
+        with open(str(self.thread_id) + "_stats.pkl", "ab") as out_file:
+            pickle.dump(self.event_list, out_file)
         print(self, 'ending episode. Step counter:', self.thread_steps,
               'Score:', self.total_reward, 'Current Rand Val:', self.action_handler.curr_rand_val)
