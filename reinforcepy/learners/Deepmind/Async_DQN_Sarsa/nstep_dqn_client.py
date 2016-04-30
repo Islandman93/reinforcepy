@@ -78,7 +78,7 @@ class AsyncNStepDQNLearner(BaseAsyncTargetLearner, BaseQLearner):
             # async update step
             global_vars = self.async_update()
 
-            self.event_list.append(minibatch_end(self.thread_steps * self.skip_frame, loss))
+            self.event_list.append(minibatch_end(global_vars['counter'], loss))
 
             self.action_handler.anneal_to(global_vars['counter'])
 
