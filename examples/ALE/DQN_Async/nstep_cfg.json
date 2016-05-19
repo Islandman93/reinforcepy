@@ -3,13 +3,11 @@
     "input_shape": ["None", 4, 84, 84],
     "output_num": 4,
     "stride": [4, 2],
-    "untie_biases": true
+    "untie_biases": false
   },
   "training_parameters": {
-    "learning_rate": 0.0001,
-    "epsilon": 1e-6,
-    "training_size": 5,
-    "gradient_clip": 0.5
+    "learning_rate": 0.0007,
+    "training_size": 5
   },
   "learner_parameters": {
     "skip_frame": 4,

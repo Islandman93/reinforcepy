@@ -1,8 +1,10 @@
-import numpy as np
-from .BaseAsyncTargetLearner import BaseAsyncTargetLearner
-from reinforcepy.learners import BaseQLearner
-from reinforcepy.handlers.events import minibatch_end, epoch_end
 import pickle
+
+import numpy as np
+
+from reinforcepy.learners import BaseQLearner
+from reinforcepy.logging.events import minibatch_end, epoch_end
+from .BaseAsyncTargetLearner import BaseAsyncTargetLearner
 
 
 class AsyncNStepDQNLearner(BaseAsyncTargetLearner, BaseQLearner):
@@ -45,6 +47,8 @@ class AsyncNStepDQNLearner(BaseAsyncTargetLearner, BaseQLearner):
 
     def update(self, state, action, reward, state_tp1, terminal):
         # we don't need state because it's stored in get action
+        # we do need to convert state_tp1 though
+        state_tp1 = np.asarray(state_tp1, dtype=np.float32) / 255.0
 
         # update nstep vars
         self.rewards.append(reward)
@@ -78,7 +82,7 @@ class AsyncNStepDQNLearner(BaseAsyncTargetLearner, BaseQLearner):
             # async update step
             global_vars = self.async_update()
 
-            self.event_list.append(minibatch_end(global_vars['counter'], loss))
+            self.event_list.append(minibatch_end(step=global_vars['counter'], values={"loss": loss}))
 
             self.action_handler.anneal_to(global_vars['counter'])
 
@@ -90,8 +94,8 @@ class AsyncNStepDQNLearner(BaseAsyncTargetLearner, BaseQLearner):
 
     def episode_end(self):
         self.async_send_stats()
-        self.event_list.append(epoch_end(self.thread_steps * self.skip_frame, self.total_reward))
-        with open(str(self.thread_id) + "_stats.pkl", "ab") as out_file:
+        self.event_list.append(epoch_end(step=self.thread_steps * self.skip_frame, values={"Reward": self.total_reward}))
+        with open('saves\\' + str(self.thread_id) + "_stats.pkl", "ab") as out_file:
             pickle.dump(self.event_list, out_file)
         print(self, 'ending episode. Step counter:', self.thread_steps,
               'Score:', self.total_reward, 'Current Rand Val:', self.action_handler.curr_rand_val)

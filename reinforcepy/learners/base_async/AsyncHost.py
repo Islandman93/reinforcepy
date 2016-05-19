@@ -60,7 +60,7 @@ class AsyncLearnerHost:
                 ep_count += save_interval
 
                 # save network parms
-                with open('async_network_parameters{0}.pkl'.format(sum(self.learner_frames)), 'wb') as out_file:
+                with open('saves\\parms_{0}.pkl'.format(sum(self.learner_frames)), 'wb') as out_file:
                     pickle.dump(self.network.get_parameters(), out_file)
 
                 if show_status:
@@ -75,8 +75,11 @@ class AsyncLearnerHost:
             pipe.send((PipeCmds.HostSendingGlobalParameters,
                        (self.network.get_parameters(), {'counter': sum(self.learner_frames)})))
         if pipe_cmd == PipeCmds.ClientSendingStats:
-            if extras['score'] > self.best_score:
-                self.best_score = extras['score']
+            self.process_client_sending_stats(extras)
+
+    def process_client_sending_stats(self, extras):
+        if extras['score'] > self.best_score:
+            self.best_score = extras['score']
 
     def print_status(self, st):
         et = time.time()
