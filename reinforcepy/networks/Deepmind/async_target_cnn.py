@@ -2,8 +2,7 @@ import numpy as np
 import theano
 import theano.tensor as T
 import lasagne
-from .dqn_inits import create_NIPS_sprag_init
-from .dqn_rmsprop import deepmind_rmsprop
+from .dqn_inits import create_async_muupan_init
 
 
 class AsyncTargetCNN:
@@ -16,13 +15,13 @@ class AsyncTargetCNN:
         self.state = theano.shared(np.zeros((1, inp_shape[1], inp_shape[2], inp_shape[3]), dtype=theano.config.floatX))
         self.state_tp1 = theano.shared(np.zeros((1, inp_shape[1], inp_shape[2], inp_shape[3]), dtype=theano.config.floatX))
 
-        network_dic = create_NIPS_sprag_init(network_parms)
+        network_dic = create_async_muupan_init(network_parms)
         self.l_in = network_dic['l_in']
         self.l_hid1 = network_dic['l_hid1']
         self.l_hid2 = network_dic['l_hid2']
         self.l_hid3 = network_dic['l_hid3']
         self.l_out = network_dic['l_out']
-        self.target_l_out = create_NIPS_sprag_init(network_parms)['l_out']
+        self.target_l_out = create_async_muupan_init(network_parms)['l_out']
 
         # if initial values in network parms set values
         if network_parms.has('initial_vals'):
@@ -41,7 +40,6 @@ class AsyncTargetCNN:
         # get layer parms
         params = lasagne.layers.get_all_params(self.l_out)
         grads = T.grad(loss, params)
-        grads = lasagne.updates.total_norm_constraint(grads, training_parms.get('gradient_clip'))
         grads.append(loss)
 
         # updates
@@ -56,7 +54,7 @@ class AsyncTargetCNN:
 
         network_updates = [self.w1_update, self.b1_update, self.w2_update, self.b2_update,
                            self.w3_update, self.b3_update, self.w4_update, self.b4_update]
-        theano_updates = deepmind_rmsprop(network_updates, params, training_parms.get('learning_rate'))
+        theano_updates = lasagne.updates.rmsprop(network_updates, params, learning_rate=0.0007, rho=0.99, epsilon=0.1)
 
         self._get_grads = self.get_grads_fn(loss_shared_vars, grads)
         self._get_output = theano.function([], net_output)
