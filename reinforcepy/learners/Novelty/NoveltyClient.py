@@ -1,8 +1,8 @@
-from reinforcepy.learners.Deepmind import BaseAsyncTargetLearner
+from reinforcepy.learners.Deepmind import BaseAsyncProcessTargetLearner
 from reinforcepy.learners.Deepmind import AsyncNStepDQNLearner
 
 
-class AsyncNStepNoveltyLearner(BaseAsyncTargetLearner, AsyncNStepDQNLearner):
+class AsyncNStepNoveltyLearner(BaseAsyncProcessTargetLearner, AsyncNStepDQNLearner):
     def __init__(self, learner_parms, network_partial, pipe):
         super().__init__(learner_parms, network_partial, pipe)
 

@@ -1,20 +1,18 @@
 {
   "network_parameters": {
-      "input_shape": [4, 84, 84],
+      "input_shape": ["None", 4, 84, 84],
       "output_num": 4,
-      "stride": [4, 2],
-      "backend": "tensorflow"
+      "stride": [4, 2]
   },
   "training_parameters": {
       "learning_rate": 0.0002,
       "minibatch_size": 32,
       "discount": 0.95,
-      "rms_decay": 0.99,
-      "rms_epsilon": 1e-6
+      "decay": 0.99
   },
   "learner_parameters":{
       "skip_frame": 4,
-      "egreedy_policy": [1, 0.1, 1000000],
+      "anneal_egreedy_steps": 1000000,
       "dataset_shape": {"width": 84, "height": 84},
       "max_dataset_size": 1000000,
       "phi_length": 4,
@@ -24,6 +22,6 @@
   "experiment_parameters": {
     "epochs": 100,
     "save_interval": 0.1,
-    "rom": "../roms/breakout.bin"
+    "rom": "../../roms/breakout.bin"
   }
 }

@@ -1,6 +1,16 @@
 #pycharm files
 .idea/
 
+# roms
+examples/ALE/roms/
+
+# custom experiment results
+_experiments/
+
+# vscode
+.vscode/
+
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]

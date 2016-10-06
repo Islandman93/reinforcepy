@@ -5,9 +5,8 @@ Original author: https://github.com/spragunr/deep_q_rl
 
 import numpy as np
 import time
-import theano
 
-floatX = theano.config.floatX
+floatX = 'float32'
 
 
 class DataSet():
@@ -66,12 +65,6 @@ actions, and rewards.
         else:
             self.size += 1
         self.top = (self.top + 1) % self.max_steps
-
-    def add_terminal(self):
-        last_top = self.top - 1
-        if last_top < 0:
-            last_top = self.max_steps - 1
-        self.terminal[last_top] = True
 
     def __len__(self):
         """Return an approximate count of stored state transitions."""

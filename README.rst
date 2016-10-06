@@ -3,10 +3,14 @@ reinforcePy
 
 reinforcePy is meant to be an easy to use collection of helpers, networks, and learners for reinforcement learning.
 Right now the project is mainly focused on implementing papers from DeepMind and neural network based methods. There
-have been a ton of new papers published by DeepMind but no combined place or package of implementations that is the main
+have been a ton of new papers published by DeepMind but no combined place or package of implementations, that is the main
 purpose of this library.
 
-That being said, I welcome pull requests for any reinforcement learning method if it follows the tenants of this library
+Note
+----
+
+I am still trying to replicate the results listed in the DeepMind papers.
+
 
 Requirements & Installation
 ---------------------------

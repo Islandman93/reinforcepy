@@ -35,14 +35,12 @@ class PyTest(TestCommand):
 
 setup(
     name='ReinforcePy',
-    version=0.1,
+    version=0.2,
     url='http://github.com/islandman93/reinforcepy',
     license='GNU License',
     author='IslandMan93',
     tests_require=['pytest'],
-    install_requires=['numpy>=1.8.x', 'theano>=0.8', 'lasagne>=0.2.dev1'],
-    dependency_links=['https://github.com/Lasagne/Lasagne/archive/master.zip',
-                      'https://github.com/theano/theano/archive/master.zip'],
+    install_requires=['numpy>=1.8.x', 'tensorflow>=0.9', 'tflearn>=0.2', 'sacred>=0.6.10'],
     cmdclass={'test': PyTest},
     author_email='islandman93@gmail.com',
     description='Collection of reinforcement learners implemented in python.',

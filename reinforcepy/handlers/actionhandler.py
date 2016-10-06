@@ -1,3 +1,4 @@
+import numbers
 import numpy as np
 from enum import Enum
 
@@ -18,8 +19,7 @@ class ActionPolicy(Enum):
 
 class ActionHandler:
     """
-    The :class:`ActionHandler` class takes care of the interface between the action indexes returned from an environment
-    and a vector of length (num actions). It also allows two different types of stochastic selection methods.
+    The :class:`ActionHandler` class takes care of two different types of stochastic selection methods.
     :class:`ActionPolicy`-eGreedy where it randomly selects an action with probability e. Or
     :class:`ActionPolicy`-randVals where it adds noise to the action vector before choosing the index of the max action.
 
@@ -27,34 +27,34 @@ class ActionHandler:
 
     Parameters
     ----------
+    num_actions : int
+        Total number of actions
+
+    random_values : tuple or int
+        Specifies which values to use for the action policy. If int, no annealing will take place
+        format: (Initial random value, ending random value, number of steps to anneal over)
+
     action_policy : :class:`ActionPolicy`
-       Specifies whether using eGreedy or adding randVals to the action value vector
-
-    random_values : tuple
-       Specifies which values to use for the action policy
-       format: (Initial random value, ending random value, number of steps to anneal over)
-
-    actions : tuple, list, array
-       Default None, should be set by calling set_legal_actions.
+        Specifies whether using eGreedy or adding randVals to the action value vector
     """
-    def __init__(self, random_values: tuple, action_policy: ActionPolicy=ActionPolicy.eGreedy, actions: np.ndarray=None):
+    def __init__(self, num_actions: int, random_values, action_policy: ActionPolicy=ActionPolicy.eGreedy):
         self.action_policy = action_policy
+        self.num_actions = num_actions
 
-        self.highest_rand_val = random_values[0]
-        self.lowest_rand_val = random_values[1]
-        lin = np.linspace(random_values[0], random_values[1], random_values[2])
-        self.curr_rand_val = self.highest_rand_val
-        self.diff = lin[0] - lin[1]
+        # check if random values is just a number
+        if isinstance(random_values, numbers.Number):
+            self.highest_rand_val = random_values
+            self.lowest_rand_val = random_values
+            self.curr_rand_val = random_values
+            self.diff = 0
+        else:
+            self.highest_rand_val = random_values[0]
+            self.lowest_rand_val = random_values[1]
+            lin = np.linspace(random_values[0], random_values[1], random_values[2])
+            self.curr_rand_val = self.highest_rand_val
+            self.diff = lin[0] - lin[1]
         self.rand_count = 0
         self.action_count = 0
-
-        if actions is not None:
-            self.numActions = len(actions)
-            self.actions = None
-            self.set_legal_actions(actions)
-        else:
-            self.numActions = 0
-            self.actions = None
 
     def get_action(self, action_values, random=True):
         """
@@ -75,17 +75,19 @@ class ActionHandler:
         action_ind : int
             Index of max action value.
         """
+        action = None
         if random:
             if self.action_policy == ActionPolicy.eGreedy:
                 # egreedy policy to choose random action_values
                 if np.random.uniform(0, 1) <= self.curr_rand_val:
-                    e_greedy = np.random.randint(self.numActions)
-                    action_values[e_greedy] = np.inf  # set this value as the max action
+                    e_greedy = np.random.randint(self.num_actions)
+                    action = e_greedy
                     self.rand_count += 1
             elif self.action_policy == ActionPolicy.randVals:
-                action_values += np.random.randn(self.numActions) * self.curr_rand_val
+                action_values += np.random.randn(self.num_actions) * self.curr_rand_val
 
-        action = np.argmax(action_values)
+        if action is None:
+            action = np.argmax(action_values)
         self.action_count += 1
 
         return action
@@ -111,54 +113,6 @@ class ActionHandler:
         if self.curr_rand_val < self.lowest_rand_val:
             self.curr_rand_val = self.lowest_rand_val
 
-    def set_legal_actions(self, legal_actions):
-        """
-        Sets the legal actions for this handler. Sets up values need for conversion from environment action ids to
-        the learner output ids.
-
-        Parameters
-        ----------
-        legal_actions : array/list/tuple
-            Legal actions in current environment
-        """
-        self.actions = np.asarray(legal_actions, dtype=int)
-        assert len(self.actions.shape) == 1, "actions must be a vector"
-        self.numActions = len(legal_actions)
-
-    def game_action_to_action_ind(self, action):
-        """
-        Converts an action id returned from environment to the index used in the learner.
-
-        Parameters
-        ----------
-        action : int
-            Environment action index
-
-        Returns
-        -------
-        action_ind : int
-            Action index relative to learner output vector
-        """
-        return np.where(action == self.actions)[0][0]
-
-    def action_vect_to_game_action(self, action_vect: np.ndarray, random=True):
-        """
-        Converts action vector output of learner to a environment ready action id.
-
-        Parameters
-        ----------
-        action_vect : array
-            Action vector output from learner
-        random : bool
-            Default True. Whether or not to use stochastic action policy
-
-        Returns
-        -------
-        env_action_ind : int
-            Environment ready action id
-        """
-        return self.actions[self.get_action(action_vect, random)]
-
     def get_random(self):
         """
         Runs the action policy to see if we are doing a random move. Useful if generating an action from your learner
@@ -174,8 +128,18 @@ class ActionHandler:
         if self.action_policy == ActionPolicy.eGreedy:
             # egreedy policy to choose random action_values
             if np.random.uniform(0, 1) <= self.curr_rand_val:
-                e_greedy = np.random.randint(self.numActions)
+                e_greedy = np.random.randint(self.num_actions)
                 self.rand_count += 1
-                return True, self.actions[e_greedy]
+                return True, e_greedy
             else:
                 return False, None
+
+    def get_random_action(self):
+        """
+        Returns a random action
+
+        Returns
+        -------
+        Random action index
+        """
+        return np.random.randint(self.num_actions)

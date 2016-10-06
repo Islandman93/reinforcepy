@@ -13,9 +13,9 @@ class FrameBuffer:
        Specifies the shape of the buffer. Most commonly the same as the input_shape to the neural network
 
     dtype : data type
-       Default :class:`np.float32`. The data type used for the buffer
+       Default :class:`np.uint8`. The data type used for the buffer
     """
-    def __init__(self, shape, dtype=np.float32):
+    def __init__(self, shape, dtype=np.uint8):
         self.shape = shape
         self.length = shape[1]
         self.frame_buffer = np.zeros(shape, dtype=dtype)
