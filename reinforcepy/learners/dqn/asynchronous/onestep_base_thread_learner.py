@@ -6,7 +6,7 @@ from reinforcepy.handlers.framebuffer import FrameBuffer
 
 class OneStepBaseThreadLearner(threading.Thread):
     def __init__(self, environment, network, global_dict, phi_length=4,
-                 async_update_step=5, target_update_steps=10000, reward_clip_vals=[-1, 1], epsilon_annealing_start=1, 
+                 async_update_step=5, target_update_steps=10000, reward_clip_vals=[-1, 1], epsilon_annealing_start=1,
                  epsilon_annealing_choices=[0.1, 0.01, 0.5], epsilon_annealing_probabilities=[0.4, 0.3, 0.3],
                  epsilon_annealing_steps=1000000, global_epsilon_annealing=True,
                  testing=False):

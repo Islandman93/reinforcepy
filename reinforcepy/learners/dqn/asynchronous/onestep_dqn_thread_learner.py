@@ -15,7 +15,7 @@ class OneStepDQNThreadLearner(OneStepBaseThreadLearner, BaseQLearner):
         if self.reward_clip_vals is not None:
             reward = np.clip(reward, *self.reward_clip_vals)
 
-        # accumulate gradients
+        # accumulate minibatch_vars
         self.minibatch_accumulate(self.frame_buffer.get_buffer(), action,
                                   reward, self.frame_buffer.get_buffer_with(state_tp1), terminal)
 
