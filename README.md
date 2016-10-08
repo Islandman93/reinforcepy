@@ -5,29 +5,33 @@ reinforcePy is meant to be an easy to use collection of helpers, networks, and l
 ### Current Status & Usage
 Currently supported methods are DQN, Async 1 step DQN & SARSA, and N-step DQN. A3C support is coming soon. 
 
-Example usage, trained models, and results can be found under /examples/ALE(https://github.com/Islandman93/reinforcepy/tree/master/examples/ALE).
+Example usage, trained models, and results can be found under 
+[examples/ALE/](examples/ALE).
 A more in depth look at imlementation details can be found in the wiki.
 
 ## Installation
-Required packages: 
+If you don't already I recommend using [Anaconda](https://www.continuum.io/downloads) to manage python environments, it also makes installation of Numpy & Scipy  a breeze. Required packages: 
 
-- NumPy (pip install or conda install numpy)
-- SciPy (pip install or conda install scipy)
-- Pillow (pip install or conda install pillow)
-- Tensorflow[link]
-- TFLearn[link]
-- Arcade Learning Environment[link]
+- [NumPy](http://www.scipy.org/scipylib/download.html) (conda install numpy)
+- [SciPy](https://www.scipy.org/install.html) (conda install scipy)
+- [Pillow](https://python-pillow.org/) (conda install pillow)
+- [Tensorflow](https://www.tensorflow.org/versions/r0.11/get_started/os_setup.html)
+- [TFLearn](https://github.com/tflearn/tflearn) (git clone then python setup.py install)
+- [Arcade Learning Environment](https://github.com/mgbellemare/Arcade-Learning-Environment#quick-start)
 - OpenAI Gym support is coming soon
 
 Then simply:
 ```sh
+    git clone https://github.com/Islandman93/reinforcepy
+    cd reinforcepy/
     python setup.py install
 ```
 ### Windows support
 This project relies on TensorFlow which does not currently support Windows. When it does there should be no issue using this project in a Windows environment. 
 
 ## Documentation
-Documentation is a work in progress available at: http://reinforcepy.readthedocs.org/
+Documentation is a work in progress available at: http://reinforcepy.readthedocs.org/.
+
 For support, please submit an issue. 
 
 ## Development
