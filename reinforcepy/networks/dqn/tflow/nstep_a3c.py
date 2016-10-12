@@ -1,4 +1,5 @@
 from functools import partial
+import numpy as np
 import tensorflow as tf
 import tflearn
 import tflearn.helpers.summarizer as summarizer
@@ -89,53 +90,57 @@ class NStepA3C:
                                                on_value=1.0, off_value=0.0, dtype=tf.float32)
                 # we reduce sum here because the output could be negative we can't take the max
                 # the other indecies will be 0
-                actor_output_one_hot = tf.mul(-tf.log(actor_output), x_actions_one_hot)
-                log_policy = tf.reduce_sum(actor_output_one_hot, reduction_indices=1)
+                actor_output_one_hot = tf.mul(actor_output, x_actions_one_hot)
+                log_policy = -tf.log(tf.reduce_sum(actor_output_one_hot, reduction_indices=1))
 
             with tf.name_scope('actor-entropy'):
                 actor_entropy = -tf.reduce_sum(tf.mul(actor_output, tf.log(actor_output)))
+                summarizer.summarize(actor_entropy, 'scalar', 'actor-entropy')
 
             with tf.name_scope('actor-loss'):
                 # NOTICE: we are summing (accumulating) gradients
-                actor_loss_notacc = tf.mul(log_policy, critic_diff)
+                actor_loss_notacc = tf.mul(log_policy, tf.stop_gradient(critic_diff))
                 actor_loss = tf.reduce_sum(actor_loss_notacc)
+                summarizer.summarize(actor_loss, 'scalar', 'actor-loss')
 
             with tf.name_scope('critic-loss'):
                 critic_loss = tf.square(critic_diff) * 0.5
                 # NOTICE: we are summing gradients
                 critic_loss = tf.reduce_sum(critic_loss)
+                summarizer.summarize(critic_loss, 'scalar', 'critic-loss')
 
-            summarizer.summarize(critic_loss, 'scalar', 'critic-loss')
-            summarizer.summarize(actor_loss, 'scalar', 'actor-loss')
-
+            with tf.name_scope('total-loss'):
+                total_loss = actor_loss + (entropy_regularization * actor_entropy) + critic_loss
         # optimizer
         with tf.name_scope('shared-optimizer'):
             tf_learning_rate = tf.placeholder(tf.float32)
             optimizer = optimizer(learning_rate=tf_learning_rate)
-            total_loss = actor_loss + (entropy_regularization * actor_entropy) + critic_loss
             # only train the network vars
-            gradients = optimizer.compute_gradients(total_loss, var_list=network_trainables)
-            clipped_gradients = [(tf.clip_by_norm(gradient, 0.1), tensor) for gradient, tensor in gradients]
-            tf_train_step = optimizer.apply_gradients(clipped_gradients)
+            with tf.name_scope('compute-clip-grads'):
+                gradients = optimizer.compute_gradients(total_loss, var_list=network_trainables)
+                # gradients are stored as a tuple, (gradient, tensor the gradient corresponds to)
+                clipped_gradients = [(tf.clip_by_norm(gradient, 10), tensor) for gradient, tensor in gradients]
+                tf_train_step = optimizer.apply_gradients(clipped_gradients)
+                # tflearn smartly knows how gradients are stored so we just pass in the list of tuples
+                summarizer.summarize_gradients(clipped_gradients)
 
-            # tf learn auto merges all summaries so we just have to grab the last output
+            # tf learn auto merges all summaries so we just have to grab the last one
             tf_summaries = summarizer.summarize(tf_learning_rate, 'scalar', 'learning-rate')
 
         # function to get network output
         def get_output(sess, state):
             feed_dict = {x_input_channel_firstdim: state}
-            return sess.run([actor_output], feed_dict=feed_dict)
+            return sess.run(actor_output, feed_dict=feed_dict)[0]
 
         # function to get network output
         def get_target_output(sess, state):
             feed_dict = {x_input_channel_firstdim: state}
-            return sess.run([critic_output], feed_dict=feed_dict)
+            return sess.run(critic_output, feed_dict=feed_dict)[0]
 
         # function to get mse feed dict
         def train_step(sess, current_learning_rate, state, action, reward, summaries=False):
             feed_dict = {x_input_channel_firstdim: state, x_actions: action, x_rewards: reward,
                          tf_learning_rate: current_learning_rate}
-            # print(sess.run([actor_loss, critic_loss, actor_entropy], feed_dict=feed_dict))
             if summaries:
                 return sess.run([tf_summaries, tf_train_step], feed_dict=feed_dict)[0]
             else:
@@ -170,10 +175,21 @@ class NStepA3C:
 
 
 def create_a3c_network(input_tensor, output_num):
-    l_hid1 = tflearn.conv_2d(input_tensor, 16, 8, strides=4, activation='relu', scope='conv1')
-    l_hid2 = tflearn.conv_2d(l_hid1, 32, 4, strides=2, activation='relu', scope='conv2')
-    l_hid3 = tflearn.fully_connected(l_hid2, 256, activation='relu', scope='dense3')
-    actor_out = tflearn.fully_connected(l_hid3, output_num, activation='softmax', scope='actorout')
-    critic_out = tflearn.fully_connected(l_hid3, 1, activation='linear', scope='criticout')
+    l_hid1 = tflearn.conv_2d(input_tensor, 16, 8, strides=4, activation='relu', scope='conv1',
+                             weights_init=torch_init(input_tensor), bias_init=torch_init(input_tensor))
+    l_hid2 = tflearn.conv_2d(l_hid1, 32, 4, strides=2, activation='relu', scope='conv2',
+                             weights_init=torch_init(l_hid1), bias_init=torch_init(l_hid1))
+    l_hid3 = tflearn.fully_connected(l_hid2, 256, activation='relu', scope='dense3',
+                                     weights_init=torch_init(l_hid2), bias_init=torch_init(l_hid2))
+    actor_out = tflearn.fully_connected(l_hid3, output_num, activation='softmax', scope='actorout',
+                                        weights_init=torch_init(l_hid3), bias_init=torch_init(l_hid3))
+    critic_out = tflearn.fully_connected(l_hid3, 1, activation='linear', scope='criticout',
+                                         weights_init=torch_init(l_hid3), bias_init=torch_init(l_hid3))
 
     return actor_out, critic_out
+
+
+def torch_init(input_tensor: str):
+    shape_ints = [int(x) for x in input_tensor.get_shape()[1:]]
+    stdv = 1.0 / np.sqrt(np.prod(shape_ints))
+    return tf.random_uniform_initializer(minval=-stdv, maxval=stdv)

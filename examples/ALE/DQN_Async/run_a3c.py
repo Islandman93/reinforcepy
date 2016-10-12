@@ -1,7 +1,7 @@
 import json
 from reinforcepy.environments import ALEEnvironment
 from reinforcepy.networks.dqn.tflow.nstep_a3c import NStepA3C
-from reinforcepy.learners.dqn.asynchronous.nstep_dqn_thread_learner import NStepDQNThreadLearner
+from reinforcepy.learners.dqn.asynchronous.a3c_dqn_thread_learner import A3CThreadLearner
 from reinforcepy.learners.dqn.asynchronous.async_target_thread_host import AsyncTargetThreadHost
 
 CONFIG = json.load(open('a3c_cfg.json'))
@@ -20,7 +20,7 @@ def main(rom_args, learner_args, network_args, num_threads, initial_learning_rat
     thread_host = AsyncTargetThreadHost(network, initial_learning_rate, log_dir=logdir)
 
     # create threads
-    threads = [NStepDQNThreadLearner(environments[t], network, thread_host.shared_dict, **learner_args) for t in range(num_threads)]
+    threads = [A3CThreadLearner(environments[t], network, thread_host.shared_dict, **learner_args) for t in range(num_threads)]
 
     reward_list = thread_host.run_epochs(epochs, threads, save_interval=save_interval)
 
