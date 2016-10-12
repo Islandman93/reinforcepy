@@ -14,15 +14,15 @@ class ALEEnvironment(BaseEnvironment):
     ----------
     rom : byte string
         Specifies the directory to load the rom from. Must be a byte string: b'dir_for_rom/rom.bin'
-    show_rom : boolean
+    display_screen : boolean
         Default False. Whether or not to show the game. True takes longer to run but can be fun to watch
     """
     def __init__(self, rom, resize_shape=(84, 84), skip_frame=1, repeat_action_probability=0.0,
-                 loss_of_life_termination=False, loss_of_life_negative_reward=False, show_rom=False):
+                 loss_of_life_termination=False, loss_of_life_negative_reward=False, display_screen=False):
         # set up emulator
         self.ale = ALEInterface()
 
-        if show_rom:
+        if display_screen:
             self.ale.setBool(b'display_screen', True)
 
         self.ale.setInt(b'frame_skip', skip_frame)
