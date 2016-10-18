@@ -90,36 +90,41 @@ class NStepA3C:
                                                on_value=1.0, off_value=0.0, dtype=tf.float32)
                 # we reduce sum here because the output could be negative we can't take the max
                 # the other indecies will be 0
-                actor_output_one_hot = tf.mul(actor_output, x_actions_one_hot)
-                log_policy = -tf.log(tf.reduce_sum(actor_output_one_hot, reduction_indices=1))
+                log_policy = tf.log(actor_output)
+                log_policy_one_hot = tf.mul(log_policy, x_actions_one_hot)
+                log_policy_action = tf.reduce_sum(log_policy_one_hot, reduction_indices=1)
 
             with tf.name_scope('actor-entropy'):
-                actor_entropy = -tf.reduce_sum(tf.mul(actor_output, tf.log(actor_output)))
-                summarizer.summarize(actor_entropy, 'scalar', 'actor-entropy')
+                actor_entropy = -tf.reduce_sum(tf.mul(actor_output, log_policy), reduction_indices=1)
+                summarizer.summarize(tf.reduce_mean(actor_entropy), 'scalar', 'actor-entropy-mean')
 
             with tf.name_scope('actor-loss'):
                 # NOTICE: we are summing (accumulating) gradients
-                actor_loss_notacc = tf.mul(log_policy, tf.stop_gradient(critic_diff))
-                actor_loss = tf.reduce_sum(actor_loss_notacc)
-                summarizer.summarize(actor_loss, 'scalar', 'actor-loss')
+                actor_loss_notacc = -tf.mul(log_policy_action, tf.stop_gradient(critic_diff))
+                # NOTE: we are maximizing entropy
+                # We want the network to not be sure of it's actions (entropy is highest with outputs not at 0 or 1)
+                # https://www.wolframalpha.com/input/?i=log(x)+*+x
+                actor_loss = tf.reduce_sum(actor_loss_notacc - (actor_entropy * entropy_regularization))
+                summarizer.summarize(actor_loss, 'scalar', 'actor-loss-minus-entropy')
 
             with tf.name_scope('critic-loss'):
-                critic_loss = tf.square(critic_diff) * 0.5
+                critic_loss = tf.nn.l2_loss(critic_diff)
                 # NOTICE: we are summing gradients
-                critic_loss = tf.reduce_sum(critic_loss)
                 summarizer.summarize(critic_loss, 'scalar', 'critic-loss')
 
             with tf.name_scope('total-loss'):
-                total_loss = actor_loss + (entropy_regularization * actor_entropy) + critic_loss
+                total_loss = actor_loss + critic_loss
+                summarizer.summarize(total_loss, 'scalar', 'total-loss')
+
         # optimizer
         with tf.name_scope('shared-optimizer'):
             tf_learning_rate = tf.placeholder(tf.float32)
             optimizer = optimizer(learning_rate=tf_learning_rate)
             # only train the network vars
             with tf.name_scope('compute-clip-grads'):
-                gradients = optimizer.compute_gradients(total_loss, var_list=network_trainables)
+                gradients = optimizer.compute_gradients(total_loss)
                 # gradients are stored as a tuple, (gradient, tensor the gradient corresponds to)
-                clipped_gradients = [(tf.clip_by_norm(gradient, 10), tensor) for gradient, tensor in gradients]
+                clipped_gradients = [(tf.clip_by_norm(gradient, 40), tensor) for gradient, tensor in gradients]
                 tf_train_step = optimizer.apply_gradients(clipped_gradients)
                 # tflearn smartly knows how gradients are stored so we just pass in the list of tuples
                 summarizer.summarize_gradients(clipped_gradients)
@@ -172,6 +177,16 @@ class NStepA3C:
 
     def load(self, path):
         self.saver.restore(self.tf_session, path)
+
+
+# def create_a3c_network(input_tensor, output_num):
+#     l_hid1 = tflearn.conv_2d(input_tensor, 16, 8, strides=4, activation='relu', scope='conv1')
+#     l_hid2 = tflearn.conv_2d(l_hid1, 32, 4, strides=2, activation='relu', scope='conv2')
+#     l_hid3 = tflearn.fully_connected(l_hid2, 256, activation='relu', scope='dense3')
+#     actor_out = tflearn.fully_connected(l_hid3, output_num, activation='softmax', scope='actorout')
+#     critic_out = tflearn.fully_connected(l_hid3, 1, activation='linear', scope='criticout')
+
+#     return actor_out, critic_out
 
 
 def create_a3c_network(input_tensor, output_num):

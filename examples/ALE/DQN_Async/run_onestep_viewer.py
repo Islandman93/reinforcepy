@@ -40,6 +40,6 @@ def main(model_path, rom_args, learner_args, network_args, num_threads, initial_
 
 
 if __name__ == '__main__':
-    if len(sys.argv) == 0:
+    if len(sys.argv) == 1:
         raise AttributeError('You must specify the models path as an argument')
     main(sys.argv[1], **CONFIG)
