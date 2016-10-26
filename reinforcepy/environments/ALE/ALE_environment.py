@@ -18,7 +18,8 @@ class ALEEnvironment(BaseEnvironment):
         Default False. Whether or not to show the game. True takes longer to run but can be fun to watch
     """
     def __init__(self, rom, resize_shape=(84, 84), skip_frame=1, repeat_action_probability=0.0,
-                 loss_of_life_termination=False, loss_of_life_negative_reward=False, display_screen=False):
+                 loss_of_life_termination=False, loss_of_life_negative_reward=False, display_screen=False,
+                 seed=np.random.RandomState()):
         # set up emulator
         self.ale = ALEInterface()
 
@@ -26,6 +27,7 @@ class ALEEnvironment(BaseEnvironment):
             self.ale.setBool(b'display_screen', True)
 
         self.ale.setInt(b'frame_skip', skip_frame)
+        self.ale.setInt(b'random_seed', seed.randint(0, 9999))
         self.ale.setFloat(b'repeat_action_probability', repeat_action_probability)
 
         self.ale.loadROM(rom.encode())

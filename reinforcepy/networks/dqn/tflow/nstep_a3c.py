@@ -179,32 +179,11 @@ class NStepA3C:
         self.saver.restore(self.tf_session, path)
 
 
-# def create_a3c_network(input_tensor, output_num):
-#     l_hid1 = tflearn.conv_2d(input_tensor, 16, 8, strides=4, activation='relu', scope='conv1')
-#     l_hid2 = tflearn.conv_2d(l_hid1, 32, 4, strides=2, activation='relu', scope='conv2')
-#     l_hid3 = tflearn.fully_connected(l_hid2, 256, activation='relu', scope='dense3')
-#     actor_out = tflearn.fully_connected(l_hid3, output_num, activation='softmax', scope='actorout')
-#     critic_out = tflearn.fully_connected(l_hid3, 1, activation='linear', scope='criticout')
-
-#     return actor_out, critic_out
-
-
 def create_a3c_network(input_tensor, output_num):
-    l_hid1 = tflearn.conv_2d(input_tensor, 16, 8, strides=4, activation='relu', scope='conv1',
-                             weights_init=torch_init(input_tensor), bias_init=torch_init(input_tensor))
-    l_hid2 = tflearn.conv_2d(l_hid1, 32, 4, strides=2, activation='relu', scope='conv2',
-                             weights_init=torch_init(l_hid1), bias_init=torch_init(l_hid1))
-    l_hid3 = tflearn.fully_connected(l_hid2, 256, activation='relu', scope='dense3',
-                                     weights_init=torch_init(l_hid2), bias_init=torch_init(l_hid2))
-    actor_out = tflearn.fully_connected(l_hid3, output_num, activation='softmax', scope='actorout',
-                                        weights_init=torch_init(l_hid3), bias_init=torch_init(l_hid3))
-    critic_out = tflearn.fully_connected(l_hid3, 1, activation='linear', scope='criticout',
-                                         weights_init=torch_init(l_hid3), bias_init=torch_init(l_hid3))
+    l_hid1 = tflearn.conv_2d(input_tensor, 16, 8, strides=4, activation='relu', scope='conv1')
+    l_hid2 = tflearn.conv_2d(l_hid1, 32, 4, strides=2, activation='relu', scope='conv2')
+    l_hid3 = tflearn.fully_connected(l_hid2, 256, activation='relu', scope='dense3')
+    actor_out = tflearn.fully_connected(l_hid3, output_num, activation='softmax', scope='actorout')
+    critic_out = tflearn.fully_connected(l_hid3, 1, activation='linear', scope='criticout')
 
     return actor_out, critic_out
-
-
-def torch_init(input_tensor: str):
-    shape_ints = [int(x) for x in input_tensor.get_shape()[1:]]
-    stdv = 1.0 / np.sqrt(np.prod(shape_ints))
-    return tf.random_uniform_initializer(minval=-stdv, maxval=stdv)

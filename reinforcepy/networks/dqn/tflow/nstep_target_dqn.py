@@ -124,7 +124,13 @@ class NStepTargetDQN:
             tf_learning_rate = tf.placeholder(tf.float32)
             optimizer = optimizer(learning_rate=tf_learning_rate)
             # only train the network vars not the target network
-            tf_train_step = optimizer.minimize(error, var_list=network_trainables)
+            with tf.name_scope('compute-clip-grads'):
+                gradients = optimizer.compute_gradients(error, var_list=network_trainables)
+                # gradients are stored as a tuple, (gradient, tensor the gradient corresponds to)
+                clipped_gradients = [(tf.clip_by_norm(gradient, 40), tensor) for gradient, tensor in gradients]
+                tf_train_step = optimizer.apply_gradients(clipped_gradients)
+                # tflearn smartly knows how gradients are stored so we just pass in the list of tuples
+                summarizer.summarize_gradients(clipped_gradients)
 
             # tf learn auto merges all summaries so we just have to grab the last output
             tf_summaries = summarizer.summarize(tf_learning_rate, 'scalar', 'learning-rate')
