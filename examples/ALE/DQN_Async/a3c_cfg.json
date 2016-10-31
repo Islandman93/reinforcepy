@@ -17,7 +17,7 @@
     "entropy_regularization": 0.01
   },
   "num_threads": 16,
-  "initial_learning_rate": 0.004,
+  "initial_learning_rate": 0.0007,
   "epochs": 100,
   "save_interval": 0.01,
   "logdir": "./runs/a3c/"

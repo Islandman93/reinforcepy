@@ -104,16 +104,18 @@ class NStepA3C:
                 # NOTE: we are maximizing entropy
                 # We want the network to not be sure of it's actions (entropy is highest with outputs not at 0 or 1)
                 # https://www.wolframalpha.com/input/?i=log(x)+*+x
-                actor_loss = tf.reduce_sum(actor_loss_notacc - (actor_entropy * entropy_regularization))
-                summarizer.summarize(actor_loss, 'scalar', 'actor-loss-minus-entropy')
+                actor_loss = actor_loss_notacc - (actor_entropy * entropy_regularization)
+                summarizer.summarize(tf.reduce_sum(actor_loss), 'scalar', 'actor-loss-minus-entropy')
 
             with tf.name_scope('critic-loss'):
-                critic_loss = tf.nn.l2_loss(critic_diff)
-                # NOTICE: we are summing gradients
-                summarizer.summarize(critic_loss, 'scalar', 'critic-loss')
+                # notice we are actually multiplying by 0.5 twice
+                # once to compute a better derivative of mse and second dqn uses half the learning rate for value network
+                critic_loss = tf.nn.l2_loss(critic_diff) * 0.5
+                summarizer.summarize(tf.reduce_sum(critic_loss), 'scalar', 'critic-loss')
 
             with tf.name_scope('total-loss'):
-                total_loss = actor_loss + critic_loss
+                # NOTICE: we are summing gradients
+                total_loss = tf.reduce_sum(actor_loss + critic_loss)
                 summarizer.summarize(total_loss, 'scalar', 'total-loss')
 
         # optimizer
@@ -122,7 +124,7 @@ class NStepA3C:
             optimizer = optimizer(learning_rate=tf_learning_rate)
             # only train the network vars
             with tf.name_scope('compute-clip-grads'):
-                gradients = optimizer.compute_gradients(total_loss)
+                gradients = optimizer.compute_gradients(total_loss, var_list=network_trainables)
                 # gradients are stored as a tuple, (gradient, tensor the gradient corresponds to)
                 clipped_gradients = [(tf.clip_by_norm(gradient, 40), tensor) for gradient, tensor in gradients]
                 tf_train_step = optimizer.apply_gradients(clipped_gradients)
