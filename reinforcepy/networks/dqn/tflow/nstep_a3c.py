@@ -104,18 +104,18 @@ class NStepA3C:
                 # NOTE: we are maximizing entropy
                 # We want the network to not be sure of it's actions (entropy is highest with outputs not at 0 or 1)
                 # https://www.wolframalpha.com/input/?i=log(x)+*+x
-                actor_loss = actor_loss_notacc - (actor_entropy * entropy_regularization)
-                summarizer.summarize(tf.reduce_sum(actor_loss), 'scalar', 'actor-loss-minus-entropy')
+                actor_loss = tf.reduce_sum(actor_loss_notacc - (actor_entropy * entropy_regularization))
+                summarizer.summarize(actor_loss, 'scalar', 'actor-loss-minus-entropy')
 
             with tf.name_scope('critic-loss'):
                 # notice we are actually multiplying by 0.5 twice
                 # once to compute a better derivative of mse and second dqn uses half the learning rate for value network
                 critic_loss = tf.nn.l2_loss(critic_diff) * 0.5
-                summarizer.summarize(tf.reduce_sum(critic_loss), 'scalar', 'critic-loss')
+                summarizer.summarize(critic_loss, 'scalar', 'critic-loss')
 
             with tf.name_scope('total-loss'):
                 # NOTICE: we are summing gradients
-                total_loss = tf.reduce_sum(actor_loss + critic_loss)
+                total_loss = actor_loss + critic_loss
                 summarizer.summarize(total_loss, 'scalar', 'total-loss')
 
         # optimizer
