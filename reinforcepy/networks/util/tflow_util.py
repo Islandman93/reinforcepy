@@ -97,3 +97,9 @@ def bias_variable_torch(name, shape, stdv):
     bias_tensor = tf.get_variable(name, shape, initializer=tf.random_uniform_initializer(minval=-stdv, maxval=stdv))
     # bias_tensor = tf.get_variable(name, shape, initializer=tf.constant_initializer(0.1), trainable=True)
     return bias_tensor
+
+
+def torch_init(input_tensor: str):
+    shape_ints = [int(x) for x in input_tensor.get_shape()[1:]]
+    stdv = 1.0 / np.sqrt(np.prod(shape_ints))
+    return tf.random_uniform_initializer(minval=-stdv, maxval=stdv)

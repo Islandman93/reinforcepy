@@ -1,26 +1,28 @@
 import sys
 import numpy as np
 import json
+import tflearn
 from reinforcepy.environments import ALEEnvironment
-from reinforcepy.networks.dqn.tflow.one_step_target_dqn import OneStepTargetDQN
-from reinforcepy.learners.dqn.asynchronous.onestep_dqn_thread_learner import OneStepDQNThreadLearner
+from reinforcepy.networks.dqn.tflow.nstep_a3c import NStepA3C
+from reinforcepy.learners.dqn.asynchronous.a3c_dqn_thread_learner import A3CThreadLearner
+from reinforcepy.learners.dqn.asynchronous.nstep_dqn_thread_learner import NStepDQNThreadLearner
 
-CONFIG = json.load(open('onestep_cfg.json'))
+CONFIG = json.load(open('a3c_cfg.json'))
 
 
 def main(model_path, rom_args, learner_args, network_args, num_threads, initial_learning_rate, epochs, logdir, save_interval):
     # create env
-    environment = ALEEnvironment(**rom_args)
+    environment = ALEEnvironment(**rom_args, display_screen=True)
 
     # create network then load
     num_actions = environment.get_num_actions()
     input_shape = [learner_args['phi_length']] + environment.get_state_shape()
-    network = OneStepTargetDQN(input_shape, num_actions, **network_args)
+    network = NStepA3C(input_shape, num_actions, **network_args)
     network.load(model_path)
 
     # create threads
-    del learner_args['epsilon_annealing_start']
-    learner = OneStepDQNThreadLearner(environment, network, {}, **learner_args, epsilon_annealing_start=0.01, testing=True)
+    del learner_args['random_policy']
+    learner = A3CThreadLearner(environment, network, {}, **learner_args, epsilon_annealing_start=0.01, random_policy=False, testing=True)
 
     # run 100 episodes
     reward_list = []

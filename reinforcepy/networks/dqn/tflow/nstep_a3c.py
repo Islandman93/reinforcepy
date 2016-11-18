@@ -1,11 +1,12 @@
 from functools import partial
+import numpy as np
 import tensorflow as tf
 import tflearn
 import tflearn.helpers.summarizer as summarizer
 
 
-class NStepTargetDQN:
-    def __init__(self, input_shape, output_num, optimizer=None, network_generator=None, q_discount=0.99, loss_clipping=1):
+class NStepA3C:
+    def __init__(self, input_shape, output_num, optimizer=None, network_generator=None, q_discount=0.99, entropy_regularization=0.01):
         self.tf_session = None
         self.tf_graph = None
         self.saver = None
@@ -24,13 +25,13 @@ class NStepTargetDQN:
 
         # if network is none use default nips
         if network_generator is None:
-            network_generator = create_nips_network
+            network_generator = create_a3c_network
         elif not callable(network_generator):
-            raise AttributeError('Network Generator must be callable. EX: create_nips_network(input_tensor, output_num)')
+            raise AttributeError('Network Generator must be callable. EX: create_a3c_network(input_tensor, output_num)')
 
         with tf.Graph().as_default() as graph:
             self.tf_graph = graph
-            self.create_network_graph(input_shape, output_num, network_generator, q_discount, optimizer, loss_clipping=loss_clipping)
+            self.create_network_graph(input_shape, output_num, network_generator, q_discount, optimizer, entropy_regularization=entropy_regularization)
             self.init_tf_session()
             self.update_target_network()
 
@@ -40,7 +41,7 @@ class NStepTargetDQN:
         self.tf_session = tf.Session(graph=self.tf_graph, config=config)
         self.tf_session.run(tf.initialize_all_variables())
 
-    def create_network_graph(self, input_shape, output_num, network_generator, q_discount, optimizer, loss_clipping):
+    def create_network_graph(self, input_shape, output_num, network_generator, q_discount, optimizer, entropy_regularization):
         # Input placeholders
         with tf.name_scope('input'):
             # we need to fix the input shape from (batch, filter, height, width) to
@@ -48,19 +49,23 @@ class NStepTargetDQN:
             x_input_channel_firstdim = tf.placeholder(tf.uint8, [None] + input_shape, name='x-input')
             # transpose because tf wants channels on last dim and channels are passed in on 2nd dim
             x_input = tf.cast(tf.transpose(x_input_channel_firstdim, perm=[0, 2, 3, 1]), tf.float32) / 255.0
-            x_input_tp1_channel_firstdim = tf.placeholder(tf.uint8, [None] + input_shape, name='x-input-tp1')
             # transpose because tf wants channels on last dim and channels are passed in on 2nd dim
-            x_input_tp1 = tf.cast(tf.transpose(x_input_tp1_channel_firstdim, perm=[0, 2, 3, 1]), tf.float32) / 255.0
             x_actions = tf.placeholder(tf.int32, shape=[None], name='x-actions')
             x_rewards = tf.placeholder(tf.float32, shape=[None], name='x-rewards')
 
         # Target network does not reuse variables. so we use two different variable scopes
         with tf.variable_scope('network'):
-            network_output = network_generator(x_input, output_num)
+            actor_output, critic_output = network_generator(x_input, output_num)
+            # flatten the critic_output NOTE: THIS IS VERY IMPORTANT
+            # otherwise critic_output will be (batch_size, 1) and all ops with it and x_rewards will create a
+            # tensor of shape (batch_size, batch_size)
+            critic_output = tf.reshape(critic_output, [-1])
 
             # summarize a histogram of each action output
             for output_ind in range(output_num):
-                summarizer.summarize(network_output[:, output_ind], 'histogram', 'network-output/{0}'.format(output_ind))
+                summarizer.summarize(actor_output[:, output_ind], 'histogram', 'network-actor-output/{0}'.format(output_ind))
+            # summarize critic output
+            summarizer.summarize(tf.reduce_mean(critic_output), 'scalar', 'network-critic-output')
 
             # get the trainable variables for this network, later used to overwrite target network vars
             network_trainables = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope='network')
@@ -71,25 +76,12 @@ class NStepTargetDQN:
             # add network summaries
             summarizer.summarize_variables(train_vars=network_trainables)
 
-        with tf.variable_scope('target-network'):
-            target_network_output = network_generator(x_input_tp1, output_num)
-
-            # get trainables for target network, used in assign op for the update target network step
-            target_network_trainables = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope='target-network')
-
-            # summarize activations
-            # summarizer.summarize_activations(tf.get_collection(tf.GraphKeys.ACTIVATIONS, scope='target-network'))
-
-            # add network summaries
-            summarizer.summarize_variables(train_vars=target_network_trainables)
-
-        # update target network with network variables
-        with tf.name_scope('update-target-network'):
-            update_target_network_ops = [target_v.assign(v) for v, target_v in zip(network_trainables, target_network_trainables)]
-
-        # caclulate QLoss
+        # caclulate losses
         with tf.name_scope('loss'):
-            with tf.name_scope('estimated-reward'):
+            with tf.name_scope('critic-reward-diff'):
+                critic_diff = tf.sub(x_rewards, critic_output)
+
+            with tf.name_scope('log-of-actor-policy'):
                 # Because of https://github.com/tensorflow/tensorflow/issues/206
                 # we cannot use numpy like indexing so we convert to a one hot
                 # multiply then take the max over last dim
@@ -98,52 +90,59 @@ class NStepTargetDQN:
                                                on_value=1.0, off_value=0.0, dtype=tf.float32)
                 # we reduce sum here because the output could be negative we can't take the max
                 # the other indecies will be 0
-                est_rew = tf.reduce_sum(tf.mul(network_output, x_actions_one_hot), reduction_indices=1)
+                log_policy = tf.log(actor_output)
+                log_policy_one_hot = tf.mul(log_policy, x_actions_one_hot)
+                log_policy_action = tf.reduce_sum(log_policy_one_hot, reduction_indices=1)
 
-            with tf.name_scope('qloss'):
-                # clip loss but keep linear past clip bounds
-                # REFS: https://github.com/spragunr/deep_q_rl/blob/master/deep_q_rl/q_network.py#L108
-                # https://github.com/Jabberwockyll/deep_rl_ale/blob/master/q_network.py#L241
-                diff = x_rewards - est_rew
+            with tf.name_scope('actor-entropy'):
+                actor_entropy = -tf.reduce_sum(tf.mul(actor_output, log_policy), reduction_indices=1)
+                summarizer.summarize(tf.reduce_mean(actor_entropy), 'scalar', 'actor-entropy-mean')
 
-                if loss_clipping > 0.0:
-                    abs_diff = tf.abs(diff)
-                    # same as min(diff, loss_clipping) because diff can never be negative (definition of abs value)
-                    quadratic_part = tf.clip_by_value(abs_diff, 0.0, loss_clipping)
-                    linear_part = abs_diff - quadratic_part
-                    loss = (0.5 * tf.square(quadratic_part)) + (loss_clipping * linear_part)
-                else:
-                    # But why multiply the loss by 0.5 when not clipping? https://groups.google.com/forum/#!topic/deep-q-learning/hKK0ZM_OWd4
-                    loss = 0.5 * tf.square(diff)
+            with tf.name_scope('actor-loss'):
+                # NOTICE: we are summing (accumulating) gradients
+                actor_loss_notacc = -tf.mul(log_policy_action, tf.stop_gradient(critic_diff))
+                # NOTE: we are maximizing entropy
+                # We want the network to not be sure of it's actions (entropy is highest with outputs not at 0 or 1)
+                # https://www.wolframalpha.com/input/?i=log(x)+*+x
+                actor_loss = actor_loss_notacc - (actor_entropy * entropy_regularization)
+                summarizer.summarize(tf.reduce_sum(actor_loss), 'scalar', 'actor-loss-minus-entropy')
+
+            with tf.name_scope('critic-loss'):
+                # notice we are actually multiplying by 0.5 twice
+                # once to compute a better derivative of mse and second dqn uses half the learning rate for value network
+                critic_loss = tf.nn.l2_loss(critic_diff) * 0.5
+                summarizer.summarize(tf.reduce_sum(critic_loss), 'scalar', 'critic-loss')
+
+            with tf.name_scope('total-loss'):
                 # NOTICE: we are summing gradients
-                error = tf.reduce_sum(loss)
-            summarizer.summarize(error, 'scalar', 'loss')
+                total_loss = tf.reduce_sum(actor_loss + critic_loss)
+                summarizer.summarize(total_loss, 'scalar', 'total-loss')
 
         # optimizer
         with tf.name_scope('shared-optimizer'):
             tf_learning_rate = tf.placeholder(tf.float32)
             optimizer = optimizer(learning_rate=tf_learning_rate)
-            # only train the network vars not the target network
+            # only train the network vars
             with tf.name_scope('compute-clip-grads'):
-                gradients = optimizer.compute_gradients(error, var_list=network_trainables)
+                gradients = optimizer.compute_gradients(total_loss, var_list=network_trainables)
                 # gradients are stored as a tuple, (gradient, tensor the gradient corresponds to)
                 clipped_gradients = [(tf.clip_by_norm(gradient, 40), tensor) for gradient, tensor in gradients]
                 tf_train_step = optimizer.apply_gradients(clipped_gradients)
                 # tflearn smartly knows how gradients are stored so we just pass in the list of tuples
                 summarizer.summarize_gradients(clipped_gradients)
 
-            # tf learn auto merges all summaries so we just have to grab the last output
+            # tf learn auto merges all summaries so we just have to grab the last one
             tf_summaries = summarizer.summarize(tf_learning_rate, 'scalar', 'learning-rate')
 
         # function to get network output
         def get_output(sess, state):
             feed_dict = {x_input_channel_firstdim: state}
-            return sess.run([network_output], feed_dict=feed_dict)
+            return sess.run(actor_output, feed_dict=feed_dict)[0]
 
         # function to get network output
         def get_target_output(sess, state):
-            feed_dict = {x_input_tp1_channel_firstdim: state}
-            return sess.run([target_network_output], feed_dict=feed_dict)
+            feed_dict = {x_input_channel_firstdim: state}
+            return sess.run(critic_output, feed_dict=feed_dict)[0]
 
         # function to get mse feed dict
         def train_step(sess, current_learning_rate, state, action, reward, summaries=False):
@@ -155,7 +154,7 @@ class NStepTargetDQN:
                 return sess.run([tf_train_step], feed_dict=feed_dict)
 
         def update_target_net(sess):
-            return sess.run([update_target_network_ops])
+            pass
 
         self._get_output = get_output
         self._get_target_output = get_target_output
@@ -182,10 +181,11 @@ class NStepTargetDQN:
         self.saver.restore(self.tf_session, path)
 
 
-def create_nips_network(input_tensor, output_num):
+def create_a3c_network(input_tensor, output_num):
     l_hid1 = tflearn.conv_2d(input_tensor, 16, 8, strides=4, activation='relu', scope='conv1')
     l_hid2 = tflearn.conv_2d(l_hid1, 32, 4, strides=2, activation='relu', scope='conv2')
     l_hid3 = tflearn.fully_connected(l_hid2, 256, activation='relu', scope='dense3')
-    out = tflearn.fully_connected(l_hid3, output_num, scope='denseout')
+    actor_out = tflearn.fully_connected(l_hid3, output_num, activation='softmax', scope='actorout')
+    critic_out = tflearn.fully_connected(l_hid3, 1, activation='linear', scope='criticout')
 
-    return out
+    return actor_out, critic_out

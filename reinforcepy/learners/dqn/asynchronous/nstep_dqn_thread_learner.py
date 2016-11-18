@@ -23,13 +23,11 @@ class NStepDQNThreadLearner(OneStepBaseThreadLearner, BaseQLearner):
         self.global_dict['counter'] += 1
 
         # check update target
-        if self.check_update_target(self.global_dict["counter"]):
-            print(self, 'setting target')
-            self.network.update_target_network()
+        self.possibly_update_target()
 
         # check perform gradient step
         if self.step_count % self.async_update_step == 0 or terminal:
-            td_rewards = self.calculate_td_reward(self.frame_buffer.get_buffer(), terminal)
+            td_rewards = self.calculate_td_reward(self.frame_buffer.get_buffer_with(state_tp1), terminal)
             summaries = self.global_dict['write_summaries_this_step']
             if summaries:
                 self.global_dict['write_summaries_this_step'] = False
@@ -39,15 +37,12 @@ class NStepDQNThreadLearner(OneStepBaseThreadLearner, BaseQLearner):
                 self.network.train_step(self.global_dict['learning_rate'], *self.get_minibatch_vars(), reward=td_rewards, summaries=False)
             self.reset_minibatch()
 
-        # anneal action handler
-        anneal_step = self.global_dict['counter'] if self.global_epsilon_annealing else self.step_count
-        self.action_handler.anneal_to(anneal_step)
+        self.anneal_random_policy()
 
-    def calculate_td_reward(self, state, terminal):
-        curr_reward = 0 if terminal else np.max(self.network.get_target_output(state))
-        td_rewards = [curr_reward]
-        # NOTICE: we already created the reward for the last state so we take the rewards only for the states before this one
-        for reward in reversed(self.minibatch_vars['rewards'][:-1]):
+    def calculate_td_reward(self, state_tp1, terminal):
+        curr_reward = 0 if terminal else np.max(self.network.get_target_output(state_tp1))
+        td_rewards = []
+        for reward in reversed(self.minibatch_vars['rewards']):
             curr_reward = reward + self.network.q_discount * curr_reward
             td_rewards.append(curr_reward)
         # td rewards is computed backward but minibatch is stored forward so need to reverse

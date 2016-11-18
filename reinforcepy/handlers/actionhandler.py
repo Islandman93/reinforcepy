@@ -53,6 +53,8 @@ class ActionHandler:
             lin = np.linspace(random_values[0], random_values[1], random_values[2])
             self.curr_rand_val = self.highest_rand_val
             self.diff = lin[0] - lin[1]
+            # if highest_rand_val is less than lowest_rand_val set lowest_rand_val to the lower
+            self.lowest_rand_val = self.lowest_rand_val if self.lowest_rand_val < self.highest_rand_val else self.highest_rand_val
         self.rand_count = 0
         self.action_count = 0
 

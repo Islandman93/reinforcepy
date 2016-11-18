@@ -1,0 +1,24 @@
+{
+  "rom_args": {
+    "rom": "../roms/breakout.bin",
+    "resize_shape": [84, 84],
+    "skip_frame": 4,
+    "repeat_action_probability": 0.0
+  },
+  "learner_args": {
+    "phi_length": 4,
+    "async_update_step": 5,
+    "target_update_steps": 10000,
+    "reward_clip_vals" : [-1, 1],
+    "random_policy": false
+  },
+  "network_args": {
+    "q_discount": 0.99,
+    "entropy_regularization": 0.01
+  },
+  "num_threads": 16,
+  "initial_learning_rate": 0.0007,
+  "epochs": 100,
+  "save_interval": 0.01,
+  "logdir": "./runs/a3c/"
+}

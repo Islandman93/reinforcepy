@@ -31,6 +31,12 @@ class AsyncTargetThreadHost:
                             "summary_writer": self.summary_writer, "add_reward": output_reward}
 
     def run_epochs(self, num_epochs, threaded_learners, EPOCH_DEF=1000000, save_interval=1):
+        """
+        Args:
+            save_interval: The interval in epochs to save the network, print run stats, and send summaries to tensorboard.
+                Default 1. Can be set at 0 to output every step (constrained by the sleep time)
+
+        """
         self.learning_rate_annealer = LinnearAnnealer(self.learning_rate, 0, num_epochs * EPOCH_DEF)
         self.shared_dict['learning_rate'] = self.learning_rate_annealer.curr_val
 
