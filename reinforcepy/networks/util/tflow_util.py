@@ -99,7 +99,19 @@ def bias_variable_torch(name, shape, stdv):
     return bias_tensor
 
 
-def torch_init(input_tensor: str):
+def torch_init(input_tensor):
     shape_ints = [int(x) for x in input_tensor.get_shape()[1:]]
     stdv = 1.0 / np.sqrt(np.prod(shape_ints))
     return tf.random_uniform_initializer(minval=-stdv, maxval=stdv)
+
+
+def one_hot(select_from_tensor, index_tensor, output_num):
+    # Because of https://github.com/tensorflow/tensorflow/issues/206
+    # we cannot use numpy like indexing so we convert to a one hot
+    # multiply then take the sum over last dim
+    # NumPy/Theano select_from_tensor[:, index_tensor]
+    one_hot = tf.one_hot(index_tensor, depth=output_num, name='one-hot',
+                         on_value=1.0, off_value=0.0, dtype=tf.float32)
+    # we reduce sum here because the output could be negative we can't take the max
+    # the other indecies will be 0
+    return tf.reduce_sum(tf.mul(select_from_tensor, one_hot), reduction_indices=1)
