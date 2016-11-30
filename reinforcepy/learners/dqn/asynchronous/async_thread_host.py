@@ -1,12 +1,10 @@
 import time
 import tensorflow as tf
 import numpy as np
-from reinforcepy.handlers.linear_annealer import LinnearAnnealer
 
 
-class AsyncTargetThreadHost:
-    def __init__(self, network, learning_rate, log_dir):
-        self.learning_rate = learning_rate
+class AsyncThreadHost:
+    def __init__(self, network, log_dir):
         self.learning_rate_annealer = None
         self.thread_fns = None
         self.log_dir = log_dir
@@ -27,7 +25,7 @@ class AsyncTargetThreadHost:
             self.shared_dict['reward_list'].append([r, self.shared_dict['counter']])
 
         self.shared_dict = {"counter": 0, "target_update_count": 0,
-                            "done": False, "reward_list": [], "learning_rate": 0, "write_summaries_this_step": False,
+                            "done": False, "reward_list": [], "write_summaries_this_step": False,
                             "summary_writer": self.summary_writer, "add_reward": output_reward}
 
     def run_epochs(self, num_epochs, threaded_learners, EPOCH_DEF=1000000, save_interval=1):
@@ -37,9 +35,6 @@ class AsyncTargetThreadHost:
                 Default 1. Can be set at 0 to output every step (constrained by the sleep time)
 
         """
-        self.learning_rate_annealer = LinnearAnnealer(self.learning_rate, 0, num_epochs * EPOCH_DEF)
-        self.shared_dict['learning_rate'] = self.learning_rate_annealer.curr_val
-
         threads = []
         st = time.time()
         for thread in threaded_learners:
@@ -58,11 +53,8 @@ class AsyncTargetThreadHost:
                     if len(self.shared_dict['reward_list']) > 0:
                         print('Max Reward:', np.max([x[0] for x in self.shared_dict['reward_list']]))
                         print('Avg Reward:', np.mean([x[0] for x in self.shared_dict['reward_list']]))
-                    print('Learning Rate:', self.learning_rate_annealer.curr_val)
+                    print('Learning Rate:', self.network.current_learning_rate)
                     print('===================')
-
-                    self.learning_rate_annealer.anneal_to(self.shared_dict['counter'])
-                    self.shared_dict['learning_rate'] = self.learning_rate_annealer.curr_val
 
                     # write summaries next step
                     self.shared_dict['write_summaries_this_step'] = True

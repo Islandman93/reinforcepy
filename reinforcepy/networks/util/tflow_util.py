@@ -16,6 +16,7 @@
 # ==============================================================================
 import tensorflow as tf
 import numpy as np
+import tflearn
 
 
 def nn_layer(input_tensor, shape, layer_name, act, conv, stride=None, variable_summaries=True):
@@ -104,6 +105,7 @@ def torch_init(input_tensor):
     stdv = 1.0 / np.sqrt(np.prod(shape_ints))
     return tf.random_uniform_initializer(minval=-stdv, maxval=stdv)
 
+
 def one_hot(select_from_tensor, index_tensor, output_num):
     # Because of https://github.com/tensorflow/tensorflow/issues/206
     # we cannot use numpy like indexing so we convert to a one hot
@@ -114,3 +116,12 @@ def one_hot(select_from_tensor, index_tensor, output_num):
     # we reduce sum here because the output could be negative we can't take the max
     # the other indecies will be 0
     return tf.reduce_sum(tf.mul(select_from_tensor, one_hot), reduction_indices=1)
+
+
+def create_nips_network(input_tensor, output_num):
+    l_hid1 = tflearn.conv_2d(input_tensor, 16, 8, strides=4, activation='relu', scope='conv1', padding='valid')
+    l_hid2 = tflearn.conv_2d(l_hid1, 32, 4, strides=2, activation='relu', scope='conv2', padding='valid')
+    l_hid3 = tflearn.fully_connected(l_hid2, 256, activation='relu', scope='dense3')
+    out = tflearn.fully_connected(l_hid3, output_num, scope='denseout')
+
+    return out

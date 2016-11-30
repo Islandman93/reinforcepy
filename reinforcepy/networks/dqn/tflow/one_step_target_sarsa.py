@@ -4,7 +4,7 @@ import tflearn
 import tflearn.helpers.summarizer as summarizer
 
 
-# TODO: refactor this and onestep dqn because they are soo close. only difference is action_tp1
+# TODO: refactor this with target dqn?
 class OneStepTargetSARSA:
     def __init__(self, input_shape, output_num, optimizer=None, network_generator=None, q_discount=0.99, loss_clipping=1):
         self.tf_session = None
