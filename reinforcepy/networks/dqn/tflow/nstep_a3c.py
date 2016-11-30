@@ -79,7 +79,7 @@ class NStepA3C:
         # caclulate losses
         with tf.name_scope('loss'):
             with tf.name_scope('critic-reward-diff'):
-                critic_diff = tf.sub(x_rewards, critic_output)
+                critic_diff = tf.sub(critic_output, x_rewards)
 
             with tf.name_scope('log-of-actor-policy'):
                 # Because of https://github.com/tensorflow/tensorflow/issues/206
@@ -90,32 +90,28 @@ class NStepA3C:
                                                on_value=1.0, off_value=0.0, dtype=tf.float32)
                 # we reduce sum here because the output could be negative we can't take the max
                 # the other indecies will be 0
-                log_policy = tf.log(actor_output)
+                log_policy = tf.log(actor_output + 1e-6)
                 log_policy_one_hot = tf.mul(log_policy, x_actions_one_hot)
                 log_policy_action = tf.reduce_sum(log_policy_one_hot, reduction_indices=1)
 
             with tf.name_scope('actor-entropy'):
-                actor_entropy = -tf.reduce_sum(tf.mul(actor_output, log_policy), reduction_indices=1)
-                summarizer.summarize(tf.reduce_mean(actor_entropy), 'scalar', 'actor-entropy-mean')
+                actor_entropy = tf.reduce_sum(tf.mul(actor_output, log_policy))
+                summarizer.summarize(actor_entropy, 'scalar', 'actor-entropy')
 
             with tf.name_scope('actor-loss'):
-                # NOTICE: we are summing (accumulating) gradients
-                actor_loss_notacc = -tf.mul(log_policy_action, tf.stop_gradient(critic_diff))
-                # NOTE: we are maximizing entropy
-                # We want the network to not be sure of it's actions (entropy is highest with outputs not at 0 or 1)
-                # https://www.wolframalpha.com/input/?i=log(x)+*+x
-                actor_loss = tf.reduce_sum(actor_loss_notacc - (actor_entropy * entropy_regularization))
-                summarizer.summarize(actor_loss, 'scalar', 'actor-loss-minus-entropy')
+                actor_loss = tf.reduce_sum(tf.mul(log_policy_action, tf.stop_gradient(critic_diff)))
+                summarizer.summarize(actor_loss, 'scalar', 'actor-loss')
 
             with tf.name_scope('critic-loss'):
-                # notice we are actually multiplying by 0.5 twice
-                # once to compute a better derivative of mse and second dqn uses half the learning rate for value network
                 critic_loss = tf.nn.l2_loss(critic_diff) * 0.5
                 summarizer.summarize(critic_loss, 'scalar', 'critic-loss')
 
             with tf.name_scope('total-loss'):
                 # NOTICE: we are summing gradients
-                total_loss = actor_loss + critic_loss
+                # NOTE: we are maximizing entropy
+                # We want the network to not be sure of it's actions (entropy is highest with outputs not at 0 or 1)
+                # https://www.wolframalpha.com/input/?i=log(x)+*+x
+                total_loss = tf.reduce_sum(critic_loss + actor_loss + (actor_entropy * entropy_regularization))
                 summarizer.summarize(total_loss, 'scalar', 'total-loss')
 
         # optimizer
@@ -124,12 +120,17 @@ class NStepA3C:
             optimizer = optimizer(learning_rate=tf_learning_rate)
             # only train the network vars
             with tf.name_scope('compute-clip-grads'):
-                gradients = optimizer.compute_gradients(total_loss, var_list=network_trainables)
+                gradients = optimizer.compute_gradients(total_loss)
                 # gradients are stored as a tuple, (gradient, tensor the gradient corresponds to)
-                clipped_gradients = [(tf.clip_by_norm(gradient, 40), tensor) for gradient, tensor in gradients]
-                tf_train_step = optimizer.apply_gradients(clipped_gradients)
+                # kinda lame that clip by global norm doesn't accept the list of tuples returned from compute_gradients
+                # so we unzip then zip
+                tensors = [tensor for gradient, tensor in gradients]
+                grads = [gradient for gradient, tensor in gradients]
+                clipped_gradients, _ = tf.clip_by_global_norm(grads, 40)  # returns list[tensors], norm
+                clipped_grads_tensors = zip(clipped_gradients, tensors)
+                tf_train_step = optimizer.apply_gradients(clipped_grads_tensors)
                 # tflearn smartly knows how gradients are stored so we just pass in the list of tuples
-                summarizer.summarize_gradients(clipped_gradients)
+                summarizer.summarize_gradients(clipped_grads_tensors)
 
             # tf learn auto merges all summaries so we just have to grab the last one
             tf_summaries = summarizer.summarize(tf_learning_rate, 'scalar', 'learning-rate')

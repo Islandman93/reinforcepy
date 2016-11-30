@@ -29,6 +29,7 @@ class ALEEnvironment(BaseEnvironment):
         self.ale.setInt(b'frame_skip', skip_frame)
         self.ale.setInt(b'random_seed', seed.randint(0, 9999))
         self.ale.setFloat(b'repeat_action_probability', repeat_action_probability)
+        self.ale.setBool(b'color_averaging', False)
 
         self.ale.loadROM(rom.encode())
 

@@ -104,7 +104,6 @@ def torch_init(input_tensor):
     stdv = 1.0 / np.sqrt(np.prod(shape_ints))
     return tf.random_uniform_initializer(minval=-stdv, maxval=stdv)
 
-
 def one_hot(select_from_tensor, index_tensor, output_num):
     # Because of https://github.com/tensorflow/tensorflow/issues/206
     # we cannot use numpy like indexing so we convert to a one hot
