@@ -32,7 +32,7 @@ class TargetDQN(BaseNetwork):
         self._q_discount = q_discount
         self._loss_clipping = loss_clipping
         self.target_network_update_steps = target_network_update_steps
-        self._target_network_last_updated_step = 0
+        self._target_network_next_update_step = 0
 
         # super calls create_network_graph
         super().__init__(input_shape, output_num)
@@ -200,7 +200,8 @@ class TargetDQN(BaseNetwork):
         self._save_variables = network_trainables
 
     def possible_update_target_network(self, global_step):
-        if global_step > self._target_network_last_updated_step + self.target_network_update_steps:
+        if global_step > self._target_network_next_update_step:
+            self._target_network_next_update_step += self.target_network_update_steps
             logger = logging.getLogger(__name__)
             logger.info('Updating target network')
             self._update_target_network(self.tf_session)
