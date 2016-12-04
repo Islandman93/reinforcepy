@@ -10,7 +10,7 @@ from ..base_network import BaseNetwork
 class TargetDQN(BaseNetwork):
     """
         Parameters:
-            algorithm_type: str one of 'dqn', 'double', 'nstep'
+            algorithm_type: str one of 'dqn', 'double', 'nstep', 'doublenstep'
     """
     def __init__(self, input_shape, output_num, algorithm_type, optimizer=None, network_generator=tf_util.create_nips_network, q_discount=0.99, loss_clipping=1,
                  global_norm_clipping=40, initial_learning_rate=0.001, learning_rate_decay=None, target_network_update_steps=10000):
@@ -60,7 +60,7 @@ class TargetDQN(BaseNetwork):
             network_output = self._network_generator(x_input, output_num)
 
             # if double DQN then we need to create network output for s_tp1
-            if self.algorithm_type == 'double':
+            if self.algorithm_type == 'double' or self.algorithm_type == 'doublenstep':
                 var_scope.reuse_variables()
                 network_output_tp1 = self._network_generator(x_input_tp1, output_num)
 
@@ -87,15 +87,21 @@ class TargetDQN(BaseNetwork):
         with tf.name_scope('update-target-network'):
             update_target_network_ops = [target_v.assign(v) for v, target_v in zip(network_trainables, target_network_trainables)]
 
+        # if double convience function to get target values for online action
+        if self.algorithm_type == 'double' or self.algorithm_type == 'doublenstep':
+            with tf.name_scope('double_target'):
+                # Target = target_Q(s_tp1, argmax(online_Q(s_tp1)))
+                argmax_tp1 = tf.argmax(network_output_tp1, dimension=1)
+                target_value_online_action = tf_util.one_hot(target_network_output, argmax_tp1, output_num)
+
         # caclulate QLoss
         with tf.name_scope('loss'):
             # nstep rewards are calculated outside the gpu/graph because it requires a loop
-            if self.algorithm_type != 'nstep':
+            if self.algorithm_type != 'nstep' and self.algorithm_type != 'doublenstep':
                 with tf.name_scope('estimated-reward-tp1'):
                     if self.algorithm_type == 'double':
                         # Target = target_Q(s_tp1, argmax(online_Q(s_tp1)))
-                        argmax_tp1 = tf.argmax(network_output_tp1, dimension=1)
-                        target = tf_util.one_hot(target_network_output, argmax_tp1, output_num)
+                        target = target_value_online_action
                     elif self.algorithm_type == 'dqn':
                         # Target = max(target_Q(s_tp1))
                         target = tf.reduce_max(target_network_output, reduction_indices=1)
@@ -161,7 +167,7 @@ class TargetDQN(BaseNetwork):
             self.anneal_learning_rate(global_step)
 
             # if not nstep we pass all vars to gpu
-            if self.algorithm_type != 'nstep':
+            if self.algorithm_type != 'nstep' and self.algorithm_type != 'doublenstep':
                 feed_dict = {x_input_channel_firstdim: states, x_input_tp1_channel_firstdim: states_tp1,
                              x_actions: actions, x_rewards: rewards, x_terminals: terminals,
                              tf_learning_rate: self.current_learning_rate}
@@ -174,7 +180,10 @@ class TargetDQN(BaseNetwork):
                 curr_reward = 0
                 if not terminals[-1]:
                     target_feed_dict = {x_input_tp1_channel_firstdim: [states_tp1[-1]]}  # make a list to add back the first dim (needs to be 4 dims)
-                    curr_reward = max(sess.run(target_network_output, feed_dict=target_feed_dict)[0])
+                    if self.algorithm_type == 'nstep':
+                        curr_reward = max(sess.run(target_network_output, feed_dict=target_feed_dict)[0])
+                    elif self.algorithm_type == 'doublenstep':
+                        curr_reward = sess.run(target_value_online_action, feed_dict=target_feed_dict)[0]
 
                 # get bootstrap estimate of last state_tp1
                 td_rewards = []

@@ -34,7 +34,7 @@ def main(rom_args, learner_args, network_args, algorithm_type, num_threads, epoc
 if __name__ == '__main__':
     run_type = 'dqn'
     if len(sys.argv) >= 2:
-        if sys.argv[1] not in ['dqn', 'double', 'nstep']:
+        if sys.argv[1] not in ['dqn', 'double', 'nstep', 'doublenstep']:
             raise ValueError('The algorithm type must be passed as a parameter and must be either dqn, double, or nstep')
         run_type = sys.argv[1]
 
