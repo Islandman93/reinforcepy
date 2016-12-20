@@ -59,6 +59,12 @@ class TargetDQN(BaseNetwork):
         with tf.variable_scope('network') as var_scope:
             network_output = self._network_generator(x_input, output_num)
 
+            # get the trainable variables for this network, later used to overwrite target network vars
+            network_trainables = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope='network')
+
+            # summarize activations
+            summarizer.summarize_activations(tf.get_collection(tf.GraphKeys.ACTIVATIONS, scope='network'))
+
             # if double DQN then we need to create network output for s_tp1
             if self.algorithm_type == 'double' or self.algorithm_type == 'doublenstep':
                 var_scope.reuse_variables()
@@ -67,12 +73,6 @@ class TargetDQN(BaseNetwork):
             # summarize a histogram of each action output
             for output_ind in range(output_num):
                 summarizer.summarize(network_output[:, output_ind], 'histogram', 'network-output/{0}'.format(output_ind))
-
-            # get the trainable variables for this network, later used to overwrite target network vars
-            network_trainables = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope='network')
-
-            # summarize activations
-            summarizer.summarize_activations(tf.get_collection(tf.GraphKeys.ACTIVATIONS, scope='network'))
 
             # add network summaries
             summarizer.summarize_variables(train_vars=network_trainables)
