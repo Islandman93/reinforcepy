@@ -1,7 +1,7 @@
 import json
 from reinforcepy.environments import ALEEnvironment
 from reinforcepy.networks.dqn.tflow.nstep_a3c import NStepA3C
-from reinforcepy.learners.dqn.asynchronous.a3c_dqn_thread_learner import A3CThreadLearner
+from reinforcepy.learners.dqn.asynchronous.a3c_thread_learner import A3CThreadLearner
 from reinforcepy.learners.dqn.asynchronous.async_target_thread_host import AsyncTargetThreadHost
 
 CONFIG = json.load(open('a3c_cfg.json'))

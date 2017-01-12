@@ -1,8 +1,8 @@
 import numpy as np
-from .nstep_dqn_thread_learner import NStepDQNThreadLearner
+from .dqn_thread_learner import DQNThreadLearner
 
 
-class A3CThreadLearner(NStepDQNThreadLearner):
+class A3CThreadLearner(DQNThreadLearner):
     def get_action(self, state):
         """
         Get action according to policy probabilities
