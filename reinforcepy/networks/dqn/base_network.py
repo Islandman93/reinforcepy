@@ -5,6 +5,7 @@ class BaseNetwork:
     """
     Base network class, provides some tensorflow boiler plate by managing graph and session.
     Children must implement create_network_graph and set _get_output, _train_step and optionally _save_variables
+    Recurrent networks should override reset to reset their internal state
     """
     def __init__(self, input_shape, output_num):
         self._input_shape = input_shape
@@ -28,7 +29,7 @@ class BaseNetwork:
         config = tf.ConfigProto()
         config.gpu_options.allow_growth = True
         self.tf_session = tf.Session(graph=self.tf_graph, config=config)
-        self.tf_session.run(tf.initialize_all_variables())
+        self.tf_session.run(tf.global_variables_initializer())
 
     def create_network_graph(self):
         raise NotImplementedError('Children of BaseNetwork must implement create_network_graph')
@@ -47,3 +48,6 @@ class BaseNetwork:
 
     def load(self, path):
         self.saver.restore(self.tf_session, path)
+
+    def reset(self):
+        pass

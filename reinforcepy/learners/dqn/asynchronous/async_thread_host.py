@@ -12,12 +12,12 @@ class AsyncThreadHost:
         self.network = network
 
         # create a summary writer
-        self.summary_writer = tf.train.SummaryWriter(log_dir, graph=self.network.tf_graph)
+        self.summary_writer = tf.summary.FileWriter(log_dir, graph=self.network.tf_graph)
 
         with self.network.tf_graph.as_default():
             # summaries for end of episode
             reward = tf.placeholder(tf.int32)
-            reward_summary = tf.scalar_summary('reward', reward)
+            reward_summary = tf.summary.scalar('reward', reward)
 
         def output_reward(r):
             summary = self.network.tf_session.run(reward_summary, feed_dict={reward: r})
