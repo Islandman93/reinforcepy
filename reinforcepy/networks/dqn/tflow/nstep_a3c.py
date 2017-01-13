@@ -3,45 +3,21 @@ import numpy as np
 import tensorflow as tf
 import tflearn
 import tflearn.helpers.summarizer as summarizer
+import reinforcepy.networks.util.tflow_util as tf_util
+from .target_dqn import TargetDQN
 
 
-class NStepA3C:
-    def __init__(self, input_shape, output_num, optimizer=None, network_generator=None, q_discount=0.99, entropy_regularization=0.01):
-        self.tf_session = None
-        self.tf_graph = None
-        self.saver = None
-        self.q_discount = q_discount
+class NStepA3C(TargetDQN):
+    def __init__(self, input_shape, output_num, optimizer=None, network_generator=tf_util.create_a3c_network, q_discount=0.99,
+                 entropy_regularization=0.01, global_norm_clipping=40, initial_learning_rate=0.001, learning_rate_decay=None):
+        self._entropy_regularization = entropy_regularization
+        super().__init__(input_shape, output_num, None, optimizer=optimizer, network_generator=network_generator,
+                         q_discount=q_discount, loss_clipping=None, global_norm_clipping=global_norm_clipping,
+                         initial_learning_rate=initial_learning_rate, learning_rate_decay=learning_rate_decay)
 
-        # these functions are created by create_network_graph
-        self._get_output = None
-        self._train_step = None
-        self._update_target_network = None
-
-        # if optimizer is none use default rms prop
-        if optimizer is None:
-            optimizer = partial(tf.train.RMSPropOptimizer, decay=0.99, epsilon=0.1)
-        elif not callable(optimizer):
-            raise AttributeError('Optimizer must be callable. EX: partial(tf.train.RMSPropOptimizer)')
-
-        # if network is none use default nips
-        if network_generator is None:
-            network_generator = create_a3c_network
-        elif not callable(network_generator):
-            raise AttributeError('Network Generator must be callable. EX: create_a3c_network(input_tensor, output_num)')
-
-        with tf.Graph().as_default() as graph:
-            self.tf_graph = graph
-            self.create_network_graph(input_shape, output_num, network_generator, q_discount, optimizer, entropy_regularization=entropy_regularization)
-            self.init_tf_session()
-            self.update_target_network()
-
-    def init_tf_session(self):
-        config = tf.ConfigProto()
-        config.gpu_options.allow_growth = True
-        self.tf_session = tf.Session(graph=self.tf_graph, config=config)
-        self.tf_session.run(tf.initialize_all_variables())
-
-    def create_network_graph(self, input_shape, output_num, network_generator, q_discount, optimizer, entropy_regularization):
+    def create_network_graph(self):
+        input_shape = self._input_shape
+        output_num = self._output_num
         # Input placeholders
         with tf.name_scope('input'):
             # we need to fix the input shape from (batch, filter, height, width) to
@@ -53,28 +29,27 @@ class NStepA3C:
             x_actions = tf.placeholder(tf.int32, shape=[None], name='x-actions')
             x_rewards = tf.placeholder(tf.float32, shape=[None], name='x-rewards')
 
-        # Target network does not reuse variables. so we use two different variable scopes
         with tf.variable_scope('network'):
-            actor_output, critic_output = network_generator(x_input, output_num)
+            actor_output, critic_output = self._network_generator(x_input, output_num)
             # flatten the critic_output NOTE: THIS IS VERY IMPORTANT
             # otherwise critic_output will be (batch_size, 1) and all ops with it and x_rewards will create a
             # tensor of shape (batch_size, batch_size)
             critic_output = tf.reshape(critic_output, [-1])
 
-            # summarize a histogram of each action output
-            for output_ind in range(output_num):
-                summarizer.summarize(actor_output[:, output_ind], 'histogram', 'network-actor-output/{0}'.format(output_ind))
-            # summarize critic output
-            summarizer.summarize(tf.reduce_mean(critic_output), 'scalar', 'network-critic-output')
+            # # summarize a histogram of each action output
+            # for output_ind in range(output_num):
+            #     summarizer.summarize(actor_output[:, output_ind], 'histogram', 'network-actor-output/{0}'.format(output_ind))
+            # # summarize critic output
+            # summarizer.summarize(tf.reduce_mean(critic_output), 'scalar', 'network-critic-output')
 
-            # get the trainable variables for this network, later used to overwrite target network vars
+            # # get the trainable variables for this network, later used to overwrite target network vars
             network_trainables = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope='network')
 
-            # summarize activations
-            summarizer.summarize_activations(tf.get_collection(tf.GraphKeys.ACTIVATIONS, scope='network'))
+            # # summarize activations
+            # summarizer.summarize_activations(tf.get_collection(tf.GraphKeys.ACTIVATIONS, scope='network'))
 
-            # add network summaries
-            summarizer.summarize_variables(train_vars=network_trainables)
+            # # add network summaries
+            # summarizer.summarize_variables(train_vars=network_trainables)
 
         # caclulate losses
         with tf.name_scope('loss'):
@@ -111,13 +86,13 @@ class NStepA3C:
                 # NOTE: we are maximizing entropy
                 # We want the network to not be sure of it's actions (entropy is highest with outputs not at 0 or 1)
                 # https://www.wolframalpha.com/input/?i=log(x)+*+x
-                total_loss = tf.reduce_sum(critic_loss + actor_loss + (actor_entropy * entropy_regularization))
+                total_loss = tf.reduce_sum(critic_loss + actor_loss + (actor_entropy * self._entropy_regularization))
                 summarizer.summarize(total_loss, 'scalar', 'total-loss')
 
         # optimizer
         with tf.name_scope('shared-optimizer'):
             tf_learning_rate = tf.placeholder(tf.float32)
-            optimizer = optimizer(learning_rate=tf_learning_rate)
+            optimizer = self._optimizer_fn(learning_rate=tf_learning_rate)
             # only train the network vars
             with tf.name_scope('compute-clip-grads'):
                 gradients = optimizer.compute_gradients(total_loss)
@@ -126,11 +101,11 @@ class NStepA3C:
                 # so we unzip then zip
                 tensors = [tensor for gradient, tensor in gradients]
                 grads = [gradient for gradient, tensor in gradients]
-                clipped_gradients, _ = tf.clip_by_global_norm(grads, 40)  # returns list[tensors], norm
+                clipped_gradients, _ = tf.clip_by_global_norm(grads, self.global_norm_clipping)  # returns list[tensors], norm
                 clipped_grads_tensors = zip(clipped_gradients, tensors)
                 tf_train_step = optimizer.apply_gradients(clipped_grads_tensors)
                 # tflearn smartly knows how gradients are stored so we just pass in the list of tuples
-                summarizer.summarize_gradients(clipped_grads_tensors)
+                # summarizer.summarize_gradients(clipped_grads_tensors)
 
             # tf learn auto merges all summaries so we just have to grab the last one
             tf_summaries = summarizer.summarize(tf_learning_rate, 'scalar', 'learning-rate')
@@ -138,55 +113,59 @@ class NStepA3C:
         # function to get network output
         def get_output(sess, state):
             feed_dict = {x_input_channel_firstdim: state}
-            return sess.run(actor_output, feed_dict=feed_dict)[0]
+            actor_out_values = sess.run(actor_output, feed_dict=feed_dict)[0]
+            return get_action_from_probabilities(actor_out_values)
 
         # function to get network output
         def get_target_output(sess, state):
             feed_dict = {x_input_channel_firstdim: state}
             return sess.run(critic_output, feed_dict=feed_dict)[0]
 
-        # function to get mse feed dict
-        def train_step(sess, current_learning_rate, state, action, reward, summaries=False):
-            feed_dict = {x_input_channel_firstdim: state, x_actions: action, x_rewards: reward,
-                         tf_learning_rate: current_learning_rate}
+        # function to train network
+        def train_step(sess, states, actions, rewards, states_tp1, terminals, global_step=0, summaries=False):
+            self.anneal_learning_rate(global_step)
+
+            # nstep calculate TD reward
+            if sum(terminals) > 1:
+                raise ValueError('TD reward for mutiple terminal states in a batch is undefined')
+
+            # last state not terminal need to query target network
+            curr_reward = 0
+            if not terminals[-1]:
+                target_feed_dict = {x_input_channel_firstdim: [states_tp1[-1]]}  # make a list to add back the first dim (needs to be 4 dims)
+                curr_reward = max(sess.run(critic_output, feed_dict=target_feed_dict))
+
+            # get bootstrap estimate of last state_tp1
+            td_rewards = []
+            for reward in reversed(rewards):
+                curr_reward = reward + self._q_discount * curr_reward
+                td_rewards.append(curr_reward)
+            # td rewards is computed backward but other lists are stored forward so need to reverse
+            td_rewards = list(reversed(td_rewards))
+            feed_dict = {x_input_channel_firstdim: states, x_actions: actions, x_rewards: td_rewards,
+                         tf_learning_rate: self.current_learning_rate}
+
             if summaries:
                 return sess.run([tf_summaries, tf_train_step], feed_dict=feed_dict)[0]
             else:
                 return sess.run([tf_train_step], feed_dict=feed_dict)
 
-        def update_target_net(sess):
-            pass
-
         self._get_output = get_output
-        self._get_target_output = get_target_output
         self._train_step = train_step
-        self._update_target_network = update_target_net
-        self.saver = tf.train.Saver(var_list=network_trainables)
-
-    def get_output(self, x):
-        return self._get_output(self.tf_session, x)
-
-    def get_target_output(self, x):
-        return self._get_target_output(self.tf_session, x)
-
-    def train_step(self, current_learning_rate, state, action, reward, summaries=False):
-        return self._train_step(self.tf_session, current_learning_rate, state, action, reward, summaries=summaries)
-
-    def update_target_network(self):
-        self._update_target_network(self.tf_session)
-
-    def save(self, *args, **kwargs):
-        self.saver.save(self.tf_session, *args, **kwargs)
-
-    def load(self, path):
-        self.saver.restore(self.tf_session, path)
+        self._save_variables = network_trainables
 
 
-def create_a3c_network(input_tensor, output_num):
-    l_hid1 = tflearn.conv_2d(input_tensor, 16, 8, strides=4, activation='relu', padding='valid', scope='conv1')
-    l_hid2 = tflearn.conv_2d(l_hid1, 32, 4, strides=2, activation='relu', padding='valid', scope='conv2')
-    l_hid3 = tflearn.fully_connected(l_hid2, 256, activation='relu', scope='dense3')
-    actor_out = tflearn.fully_connected(l_hid3, output_num, activation='softmax', scope='actorout')
-    critic_out = tflearn.fully_connected(l_hid3, 1, activation='linear', scope='criticout')
-
-    return actor_out, critic_out
+def get_action_from_probabilities(cnn_action_probabilities):
+        """
+        Get action according to policy probabilities
+        REF: https://github.com/coreylynch/async-rl/blob/master/a3c.py#L52
+        https://github.com/muupan/async-rl/blob/master/policy_output.py#L26
+        """
+        # Subtract a tiny value from probabilities in order to avoid
+        # "ValueError: sum(pvals[:-1]) > 1.0" in numpy.multinomial
+        cnn_action_probabilities = cnn_action_probabilities - np.finfo(np.float32).epsneg
+        # Useful numpy function ref: http://docs.scipy.org/doc/numpy/reference/generated/numpy.random.multinomial.html
+        sample = np.random.multinomial(1, cnn_action_probabilities)
+        # since we only sample once, sample will look like a one hot array
+        action_index = int(np.nonzero(sample)[0])  # numpy where returns an array of length 1, we just want the first
+        return action_index

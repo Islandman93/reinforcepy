@@ -1,5 +1,6 @@
 import logging
 from functools import partial
+import numpy as np
 import tensorflow as tf
 import tflearn.helpers.summarizer as summarizer
 import reinforcepy.networks.util.tflow_util as tf_util
@@ -160,7 +161,7 @@ class TargetDQN(BaseNetwork):
         # function to get network output
         def get_output(sess, state):
             feed_dict = {x_input_channel_firstdim: state}
-            return sess.run([network_output], feed_dict=feed_dict)
+            return np.argmax(sess.run([network_output], feed_dict=feed_dict))
 
         def train_step(sess, states, actions, rewards, states_tp1, terminals, global_step=0, summaries=False):
             self.possible_update_target_network(global_step)

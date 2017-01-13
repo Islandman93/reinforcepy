@@ -125,3 +125,13 @@ def create_nips_network(input_tensor, output_num):
     out = tflearn.fully_connected(l_hid3, output_num, scope='denseout')
 
     return out
+
+
+def create_a3c_network(input_tensor, output_num):
+    l_hid1 = tflearn.conv_2d(input_tensor, 16, 8, strides=4, activation='relu', padding='valid', scope='conv1')
+    l_hid2 = tflearn.conv_2d(l_hid1, 32, 4, strides=2, activation='relu', padding='valid', scope='conv2')
+    l_hid3 = tflearn.fully_connected(l_hid2, 256, activation='relu', scope='dense3')
+    actor_out = tflearn.fully_connected(l_hid3, output_num, activation='softmax', scope='actorout')
+    critic_out = tflearn.fully_connected(l_hid3, 1, activation='linear', scope='criticout')
+
+    return actor_out, critic_out

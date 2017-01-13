@@ -15,11 +15,12 @@
   },
   "network_args": {
     "q_discount": 0.99,
-    "entropy_regularization": 0.01
+    "entropy_regularization": 0.01,
+    "initial_learning_rate": 0.004,
+    "learning_rate_decay" : 80000000
   },
   "num_threads": 16,
-  "initial_learning_rate": 0.001,
   "epochs": 80,
   "save_interval": 0.01,
-  "logdir": "./runs/a3c/"
+  "logdir": "./runs/a3c"
 }

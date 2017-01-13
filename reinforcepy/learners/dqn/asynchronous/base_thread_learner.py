@@ -59,7 +59,7 @@ class BaseThreadLearner(threading.Thread):
             print(self, 'Episode reward:', reward, 'Step count:', self.step_count, curr_rand_val)
 
     def update(self, *args, **kwargs):
-        raise NotImplementedError('Base onestep learner does not implement update. Use DQN or SARSA learners')
+        raise NotImplementedError('Base onestep learner does not implement update.')
 
     def anneal_random_policy(self):
         if self.random_policy:
@@ -76,9 +76,7 @@ class BaseThreadLearner(threading.Thread):
             # check if doing random action
             random, action = self.action_handler.get_random()
             if not random:
-                cnn_action_values = self.network.get_output(self.frame_buffer.get_buffer_with(state))
-                return np.argmax(cnn_action_values)
+                return self.network.get_output(self.frame_buffer.get_buffer_with(state))
             return action
         else:
-            cnn_action_values = self.network.get_output(self.frame_buffer.get_buffer_with(state))
-            return np.argmax(cnn_action_values)
+            return self.network.get_output(self.frame_buffer.get_buffer_with(state))

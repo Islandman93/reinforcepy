@@ -3,7 +3,7 @@ from reinforcepy.learners import BaseQLearner
 from .base_thread_learner import BaseThreadLearner
 
 
-class DQNThreadLearner(BaseThreadLearner, BaseQLearner):
+class QThreadLearner(BaseThreadLearner, BaseQLearner):
     def update(self, state, action, reward, state_tp1, terminal):
         self.frame_buffer.add_state_to_buffer(state)
 
@@ -35,8 +35,7 @@ class DQNThreadLearner(BaseThreadLearner, BaseQLearner):
             self.reset_minibatch()
 
         # anneal action handler
-        anneal_step = self.global_dict['counter'] if self.global_epsilon_annealing else self.step_count
-        self.action_handler.anneal_to(anneal_step)
+        self.anneal_random_policy()
 
     def minibatch_accumulate(self, state, action, reward, state_tp1, terminal):
         self.minibatch_vars['states'].append(state[0])
