@@ -116,11 +116,6 @@ class NStepA3C(TargetDQN):
             actor_out_values = sess.run(actor_output, feed_dict=feed_dict)[0]
             return get_action_from_probabilities(actor_out_values)
 
-        # function to get network output
-        def get_target_output(sess, state):
-            feed_dict = {x_input_channel_firstdim: state}
-            return sess.run(critic_output, feed_dict=feed_dict)[0]
-
         # function to train network
         def train_step(sess, states, actions, rewards, states_tp1, terminals, global_step=0, summaries=False):
             self.anneal_learning_rate(global_step)

@@ -1,13 +1,12 @@
 import json
+import datetime
 from reinforcepy.environments import ALEEnvironment
 from reinforcepy.networks.dqn.tflow.nstep_a3c_lstm import NStepA3CLSTM
-from reinforcepy.learners.dqn.asynchronous.a3c_recurrent_thread_learner import A3CRecurrentThreadLearner
-from reinforcepy.learners.dqn.asynchronous.async_target_thread_host import AsyncTargetThreadHost
-
-CONFIG = json.load(open('a3c_cfg.json'))
+from reinforcepy.learners.dqn.asynchronous.recurrent_thread_learner import RecurrentThreadLearner
+from reinforcepy.learners.dqn.asynchronous.async_thread_host import AsyncThreadHost
 
 
-def main(rom_args, learner_args, network_args, num_threads, initial_learning_rate, epochs, logdir, save_interval):
+def main(rom_args, learner_args, network_args, num_threads, epochs, logdir, save_interval):
     # create envs for each thread
     environments = [ALEEnvironment(**rom_args) for _ in range(num_threads)]
 
@@ -17,10 +16,10 @@ def main(rom_args, learner_args, network_args, num_threads, initial_learning_rat
     network = NStepA3CLSTM(input_shape, num_actions, **network_args)
 
     # create thread host
-    thread_host = AsyncTargetThreadHost(network, initial_learning_rate, log_dir=logdir)
+    thread_host = AsyncThreadHost(network, log_dir=logdir)
 
     # create threads
-    threads = [A3CRecurrentThreadLearner(environments[t], network, thread_host.shared_dict, **learner_args) for t in range(num_threads)]
+    threads = [RecurrentThreadLearner(environments[t], network, thread_host.shared_dict, **learner_args) for t in range(num_threads)]
 
     reward_list = thread_host.run_epochs(epochs, threads, save_interval=save_interval)
 
@@ -32,4 +31,7 @@ def main(rom_args, learner_args, network_args, num_threads, initial_learning_rat
 
 
 if __name__ == '__main__':
+    CONFIG = json.load(open('a3c_cfg.json'))
+    run_date = datetime.datetime.now().strftime("%m-%d-%Y-%H-%M")
+    CONFIG['logdir'] += 'lstm_' + run_date + '/'
     main(**CONFIG)
