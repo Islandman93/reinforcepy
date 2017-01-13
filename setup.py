@@ -40,7 +40,7 @@ setup(
     license='GNU License',
     author='IslandMan93',
     tests_require=['pytest'],
-    install_requires=['numpy>=1.8.x', 'tensorflow>=0.9', 'tflearn>=0.2', 'sacred>=0.6.10'],
+    install_requires=['numpy>=1.8.x', 'tensorflow>=0.9', 'tflearn>=0.2'],
     cmdclass={'test': PyTest},
     author_email='islandman93@gmail.com',
     description='Collection of reinforcement learners implemented in python.',
