@@ -45,23 +45,23 @@ class TargetDQN(BaseNetwork):
         with tf.name_scope('input'):
             # we need to fix the input shape from (batch, filter, height, width) to
             # tensorflow which is (batch, height, width, filter)
-            x_input_channel_firstdim = tf.placeholder(tf.uint8, [None] + input_shape, name='x-input')
+            self._t_x_input_channel_firstdim = tf.placeholder(tf.uint8, [None] + input_shape, name='x-input')
             # transpose because tf wants channels on last dim and channels are passed in on 2nd dim
-            x_input = tf.cast(tf.transpose(x_input_channel_firstdim, perm=[0, 2, 3, 1]), tf.float32) / 255.0
-            x_input_tp1_channel_firstdim = tf.placeholder(tf.uint8, [None] + input_shape, name='x-input-tp1')
+            self._t_x_input = tf.cast(tf.transpose(self._t_x_input_channel_firstdim, perm=[0, 2, 3, 1]), tf.float32) / 255.0
+            self._t_x_input_tp1_channel_firstdim = tf.placeholder(tf.uint8, [None] + input_shape, name='x-input-tp1')
             # transpose because tf wants channels on last dim and channels are passed in on 2nd dim
-            x_input_tp1 = tf.cast(tf.transpose(x_input_tp1_channel_firstdim, perm=[0, 2, 3, 1]), tf.float32) / 255.0
-            x_actions = tf.placeholder(tf.int32, shape=[None], name='x-actions')
-            x_rewards = tf.placeholder(tf.float32, shape=[None], name='x-rewards')
-            x_terminals = tf.placeholder(tf.bool, shape=[None], name='x-terminals')
-            x_discount = self._q_discount
+            self._t_x_input_tp1 = tf.cast(tf.transpose(self._t_x_input_tp1_channel_firstdim, perm=[0, 2, 3, 1]), tf.float32) / 255.0
+            self._t_x_actions = tf.placeholder(tf.int32, shape=[None], name='x-actions')
+            self._t_x_rewards = tf.placeholder(tf.float32, shape=[None], name='x-rewards')
+            self._t_x_terminals = tf.placeholder(tf.bool, shape=[None], name='x-terminals')
+            self._t_x_discount = self._q_discount
 
         # Target network does not reuse variables
         with tf.variable_scope('network') as var_scope:
-            network_output = self._network_generator(x_input, output_num)
+            self._t_network_output = self._network_generator(self._t_x_input, output_num)
 
             # get the trainable variables for this network, later used to overwrite target network vars
-            network_trainables = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope='network')
+            self._tf_network_trainables = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope='network')
 
             # summarize activations
             summarizer.summarize_activations(tf.get_collection(tf.GraphKeys.ACTIVATIONS, scope='network'))
@@ -69,31 +69,31 @@ class TargetDQN(BaseNetwork):
             # if double DQN then we need to create network output for s_tp1
             if self.algorithm_type == 'double' or self.algorithm_type == 'doublenstep':
                 var_scope.reuse_variables()
-                network_output_tp1 = self._network_generator(x_input_tp1, output_num)
+                self._t_network_output_tp1 = self._network_generator(self._t_x_input_tp1, output_num)
 
             # summarize a histogram of each action output
             for output_ind in range(output_num):
-                summarizer.summarize(network_output[:, output_ind], 'histogram', 'network-output/{0}'.format(output_ind))
+                summarizer.summarize(self._t_network_output[:, output_ind], 'histogram', 'network-output/{0}'.format(output_ind))
 
             # add network summaries
-            summarizer.summarize_variables(train_vars=network_trainables)
+            summarizer.summarize_variables(train_vars=self._tf_network_trainables)
 
         with tf.variable_scope('target-network'):
-            target_network_output = self._network_generator(x_input_tp1, output_num)
+            self._t_target_network_output = self._network_generator(self._t_x_input_tp1, output_num)
 
             # get trainables for target network, used in assign op for the update target network step
             target_network_trainables = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope='target-network')
 
         # update target network with network variables
         with tf.name_scope('update-target-network'):
-            update_target_network_ops = [target_v.assign(v) for v, target_v in zip(network_trainables, target_network_trainables)]
+            self._tf_update_target_network_ops = [target_v.assign(v) for v, target_v in zip(self._tf_network_trainables, target_network_trainables)]
 
         # if double convience function to get target values for online action
         if self.algorithm_type == 'double' or self.algorithm_type == 'doublenstep':
             with tf.name_scope('double_target'):
                 # Target = target_Q(s_tp1, argmax(online_Q(s_tp1)))
-                argmax_tp1 = tf.argmax(network_output_tp1, dimension=1)
-                target_value_online_action = tf_util.one_hot(target_network_output, argmax_tp1, output_num)
+                argmax_tp1 = tf.argmax(self._t_network_output_tp1, dimension=1)
+                self._t_target_value_online_action = tf_util.one_hot(self._t_target_network_output, argmax_tp1, output_num)
 
         # caclulate QLoss
         with tf.name_scope('loss'):
@@ -102,22 +102,22 @@ class TargetDQN(BaseNetwork):
                 with tf.name_scope('estimated-reward-tp1'):
                     if self.algorithm_type == 'double':
                         # Target = target_Q(s_tp1, argmax(online_Q(s_tp1)))
-                        target = target_value_online_action
+                        target = self._t_target_value_online_action
                     elif self.algorithm_type == 'dqn':
                         # Target = max(target_Q(s_tp1))
-                        target = tf.reduce_max(target_network_output, reduction_indices=1)
+                        target = tf.reduce_max(self._t_target_network_output, reduction_indices=1)
 
                     # compute a mask that returns gamma (discount factor) or 0 if terminal
-                    terminal_discount_mask = tf.mul(1.0 - tf.cast(x_terminals, tf.float32), x_discount)
+                    terminal_discount_mask = tf.mul(1.0 - tf.cast(self._t_x_terminals, tf.float32), self._t_x_discount)
                     est_rew_tp1 = tf.mul(terminal_discount_mask, target)
 
-                y = x_rewards + tf.stop_gradient(est_rew_tp1)
+                y = self._t_x_rewards + tf.stop_gradient(est_rew_tp1)
             # else nstep
             else:
-                y = x_rewards
+                y = self._t_x_rewards
 
             with tf.name_scope('estimated-reward'):
-                est_rew = tf_util.one_hot(network_output, x_actions, output_num)
+                est_rew = tf_util.one_hot(self._t_network_output, self._t_x_actions, output_num)
 
             with tf.name_scope('qloss'):
                 # clip loss but keep linear past clip bounds (huber loss with customizable linear part)
@@ -140,10 +140,10 @@ class TargetDQN(BaseNetwork):
 
         # optimizer
         with tf.name_scope('shared-optimizer'):
-            tf_learning_rate = tf.placeholder(tf.float32)
-            optimizer = self._optimizer_fn(learning_rate=tf_learning_rate)
+            self._tf_learning_rate = tf.placeholder(tf.float32)
+            optimizer = self._optimizer_fn(learning_rate=self._tf_learning_rate)
             # only train the network vars not the target network
-            gradients = optimizer.compute_gradients(error, var_list=network_trainables)
+            gradients = optimizer.compute_gradients(error, var_list=self._tf_network_trainables)
             # gradients are stored as a tuple, (gradient, tensor the gradient corresponds to)
             # kinda lame that clip by global norm doesn't accept the list of tuples returned from compute_gradients
             # so we unzip then zip
@@ -151,63 +151,59 @@ class TargetDQN(BaseNetwork):
             grads = [gradient for gradient, tensor in gradients]
             clipped_gradients, _ = tf.clip_by_global_norm(grads, self.global_norm_clipping)  # returns list[tensors], norm
             clipped_grads_tensors = zip(clipped_gradients, tensors)
-            tf_train_step = optimizer.apply_gradients(clipped_grads_tensors)
+            self._tf_train_step = optimizer.apply_gradients(clipped_grads_tensors)
             # tflearn smartly knows how gradients are stored so we just pass in the list of tuples
             summarizer.summarize_gradients(clipped_grads_tensors)
 
             # tf learn auto merges all summaries so we just have to grab the last output
-            tf_summaries = summarizer.summarize(tf_learning_rate, 'scalar', 'learning-rate')
+            self._tf_summaries = summarizer.summarize(self._tf_learning_rate, 'scalar', 'learning-rate')
 
-        # function to get network output
-        def get_output(sess, state):
-            feed_dict = {x_input_channel_firstdim: state}
-            return np.argmax(sess.run([network_output], feed_dict=feed_dict))
+    def _train_step(self, sess, states, actions, rewards, states_tp1, terminals, global_step=0, summaries=False):
+        self.possible_update_target_network(global_step)
+        self.anneal_learning_rate(global_step)
 
-        def train_step(sess, states, actions, rewards, states_tp1, terminals, global_step=0, summaries=False):
-            self.possible_update_target_network(global_step)
-            self.anneal_learning_rate(global_step)
+        # if not nstep we pass all vars to gpu
+        if self.algorithm_type != 'nstep' and self.algorithm_type != 'doublenstep':
+            feed_dict = {self._t_x_input_channel_firstdim: states, self._t_x_input_tp1_channel_firstdim: states_tp1,
+                         self._t_x_actions: actions, self._t_x_rewards: self._t_rewards, self._t_x_terminals: terminals,
+                         self._tf_learning_rate: self.current_learning_rate}
+        # else nstep calculate TD reward
+        else:
+            if sum(terminals) > 1:
+                raise ValueError('TD reward for mutiple terminal states in a batch is undefined')
 
-            # if not nstep we pass all vars to gpu
-            if self.algorithm_type != 'nstep' and self.algorithm_type != 'doublenstep':
-                feed_dict = {x_input_channel_firstdim: states, x_input_tp1_channel_firstdim: states_tp1,
-                             x_actions: actions, x_rewards: rewards, x_terminals: terminals,
-                             tf_learning_rate: self.current_learning_rate}
-            # else nstep calculate TD reward
-            else:
-                if sum(terminals) > 1:
-                    raise ValueError('TD reward for mutiple terminal states in a batch is undefined')
+            # last state not terminal need to query target network
+            curr_reward = 0
+            if not terminals[-1]:
+                # make a list to add back the first dim (needs to be 4 dims)
+                target_feed_dict = {self._t_x_input_tp1_channel_firstdim: [states_tp1[-1]]}
+                if self.algorithm_type == 'nstep':
+                    curr_reward = max(sess.run(self._t_target_network_output, feed_dict=target_feed_dict)[0])
+                elif self.algorithm_type == 'doublenstep':
+                    curr_reward = sess.run(self._t_target_value_online_action, feed_dict=target_feed_dict)[0]
 
-                # last state not terminal need to query target network
-                curr_reward = 0
-                if not terminals[-1]:
-                    target_feed_dict = {x_input_tp1_channel_firstdim: [states_tp1[-1]]}  # make a list to add back the first dim (needs to be 4 dims)
-                    if self.algorithm_type == 'nstep':
-                        curr_reward = max(sess.run(target_network_output, feed_dict=target_feed_dict)[0])
-                    elif self.algorithm_type == 'doublenstep':
-                        curr_reward = sess.run(target_value_online_action, feed_dict=target_feed_dict)[0]
+            # get bootstrap estimate of last state_tp1
+            td_rewards = []
+            for reward in reversed(rewards):
+                curr_reward = reward + self._q_discount * curr_reward
+                td_rewards.append(curr_reward)
+            # td rewards is computed backward but other lists are stored forward so need to reverse
+            td_rewards = list(reversed(td_rewards))
+            feed_dict = {self._t_x_input_channel_firstdim: states, self._t_x_actions: actions, self._t_x_rewards: td_rewards,
+                         self._tf_learning_rate: self.current_learning_rate}
 
-                # get bootstrap estimate of last state_tp1
-                td_rewards = []
-                for reward in reversed(rewards):
-                    curr_reward = reward + self._q_discount * curr_reward
-                    td_rewards.append(curr_reward)
-                # td rewards is computed backward but other lists are stored forward so need to reverse
-                td_rewards = list(reversed(td_rewards))
-                feed_dict = {x_input_channel_firstdim: states, x_actions: actions, x_rewards: td_rewards,
-                             tf_learning_rate: self.current_learning_rate}
+        if summaries:
+            return sess.run([self._tf_summaries, self._tf_train_step], feed_dict=feed_dict)[0]
+        else:
+            return sess.run([self._tf_train_step], feed_dict=feed_dict)
 
-            if summaries:
-                return sess.run([tf_summaries, tf_train_step], feed_dict=feed_dict)[0]
-            else:
-                return sess.run([tf_train_step], feed_dict=feed_dict)
+    def update_target_net(self, sess):
+        return sess.run([self._tf_update_target_network_ops])
 
-        def update_target_net(sess):
-            return sess.run([update_target_network_ops])
-
-        self._get_output = get_output
-        self._train_step = train_step
-        self._update_target_network = update_target_net
-        self._save_variables = network_trainables
+    # function to get network output
+    def _get_output(self, sess, state):
+        feed_dict = {self._t_x_input_channel_firstdim: state}
+        return np.argmax(sess.run([self._t_network_output], feed_dict=feed_dict))
 
     def possible_update_target_network(self, global_step):
         if global_step > self._target_network_next_update_step:
