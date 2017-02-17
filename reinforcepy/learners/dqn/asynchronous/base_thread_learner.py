@@ -6,7 +6,7 @@ from reinforcepy.handlers.framebuffer import FrameBuffer
 
 class BaseThreadLearner(threading.Thread):
     def __init__(self, environment, network, global_dict, phi_length=4,
-                 async_update_step=5, target_update_steps=10000, reward_clip_vals=[-1, 1], random_policy=True, epsilon_annealing_start=1,
+                 async_update_step=5, reward_clip_vals=[-1, 1], random_policy=True, epsilon_annealing_start=1,
                  epsilon_annealing_choices=[0.1, 0.01, 0.5], epsilon_annealing_probabilities=[0.4, 0.3, 0.3],
                  epsilon_annealing_steps=1000000, global_epsilon_annealing=True,
                  testing=False):
@@ -30,7 +30,6 @@ class BaseThreadLearner(threading.Thread):
         self.frame_buffer = FrameBuffer([1, phi_length] + environment.get_state_shape())
 
         self.async_update_step = async_update_step
-        self.target_update_steps = target_update_steps
         self.global_dict = global_dict
         self.global_epsilon_annealing = global_epsilon_annealing
 
@@ -80,3 +79,6 @@ class BaseThreadLearner(threading.Thread):
             return action
         else:
             return self.network.get_output(self.frame_buffer.get_buffer_with(state))
+
+    def reset_minibatch(self):
+        pass
