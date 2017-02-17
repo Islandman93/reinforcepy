@@ -3,13 +3,13 @@ import numpy as np
 import json
 from reinforcepy.environments import ALEEnvironment
 from reinforcepy.networks.dqn.tflow.nstep_a3c import NStepA3C
-from reinforcepy.learners.dqn.asynchronous.a3c_dqn_thread_learner import A3CThreadLearner
-from reinforcepy.learners.dqn.asynchronous.nstep_dqn_thread_learner import NStepDQNThreadLearner
+from reinforcepy.learners.dqn.asynchronous.q_thread_learner import QThreadLearner
+
 
 CONFIG = json.load(open('a3c_cfg.json'))
 
 
-def main(model_path, rom_args, learner_args, network_args, num_threads, initial_learning_rate, epochs, logdir, save_interval, deterministic=True):
+def main(model_path, rom_args, learner_args, network_args, num_threads, epochs, logdir, save_interval, deterministic=True):
     # create env
     environment = ALEEnvironment(**rom_args)
 
@@ -19,20 +19,16 @@ def main(model_path, rom_args, learner_args, network_args, num_threads, initial_
     network = NStepA3C(input_shape, num_actions, **network_args)
     network.load(model_path)
 
-    # create threads
-    del learner_args['random_policy']
     # Deterministic chooses the argmax action, not deterministic samples policy output
-    if deterministic:
-        learner = NStepDQNThreadLearner(environment, network, {}, **learner_args, epsilon_annealing_start=0.01, random_policy=True, testing=True)
-    else:
-        learner = A3CThreadLearner(environment, network, {}, **learner_args, testing=True)
+    # if deterministic:
+    learner = QThreadLearner(environment, network, {}, **learner_args, epsilon_annealing_start=0.01, random_policy=True, testing=True)
 
     # run 100 episodes
     reward_list = []
     try:
         for _ in range(100):
             reward = learner.run_episode(environment)
-            print('Episode: {0}. Reward:'.format(_), reward)
+            print('Episode: {}. Steps: {}. Reward: {}'.format(_, environment.curr_step_count, reward))
             reward_list.append(reward)
     except KeyboardInterrupt:
         pass

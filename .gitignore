@@ -7,6 +7,9 @@ examples/ALE/roms/
 # custom experiment results
 _experiments/
 
+# tensorboard files
+events.out.tfevents.*
+
 # vscode
 .vscode/
 

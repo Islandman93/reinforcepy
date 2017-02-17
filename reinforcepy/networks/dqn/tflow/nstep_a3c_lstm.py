@@ -93,7 +93,7 @@ class NStepA3CLSTM(TargetDQN):
                 # multiply then take the max over last dim
                 # NumPy/Theano est_rew = network_output[:, x_actions]
                 x_actions_one_hot = tf.one_hot(x_actions, depth=output_num, name='one-hot',
-                                                on_value=1.0, off_value=0.0, dtype=tf.float32)
+                                               on_value=1.0, off_value=0.0, dtype=tf.float32)
                 # we reduce sum here because the output could be negative we can't take the max
                 # the other indecies will be 0
                 log_policy = tf.log(actor_output + 1e-6)
@@ -159,7 +159,9 @@ class NStepA3CLSTM(TargetDQN):
             # last state not terminal need to query target network
             curr_reward = 0
             if not terminals[-1]:
-                target_feed_dict = {x_input_channel_firstdim: [states_tp1[-1]]}  # make a list to add back the first dim (needs to be 4 dims)
+                # make a list to add back the first dim (needs to be 4 dims)
+                target_feed_dict = {x_input_channel_firstdim: [states_tp1[-1]],
+                                    initial_lstm_state: lstm_state}
                 curr_reward = max(sess.run(critic_output, feed_dict=target_feed_dict))
 
             # get bootstrap estimate of last state_tp1
@@ -170,7 +172,7 @@ class NStepA3CLSTM(TargetDQN):
             # td rewards is computed backward but other lists are stored forward so need to reverse
             td_rewards = list(reversed(td_rewards))
             feed_dict = {x_input_channel_firstdim: states, x_actions: actions, x_rewards: td_rewards,
-                            tf_learning_rate: self.current_learning_rate, initial_lstm_state: lstm_state}
+                         tf_learning_rate: self.current_learning_rate, initial_lstm_state: lstm_state}
 
             if summaries:
                 return sess.run([tf_summaries, tf_train_step], feed_dict=feed_dict)[0]

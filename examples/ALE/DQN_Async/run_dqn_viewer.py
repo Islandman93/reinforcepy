@@ -27,7 +27,7 @@ def main(model_path, rom_args, learner_args, network_args, num_threads, epochs, 
     try:
         for _ in range(100):
             reward = learner.run_episode(environment)
-            print('Episode: {0}. Reward:'.format(_), reward)
+            print('Episode: {}. Steps: {}. Reward: {}'.format(_, environment.curr_step_count, reward))
             reward_list.append(reward)
     except KeyboardInterrupt:
         pass
