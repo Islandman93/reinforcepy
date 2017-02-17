@@ -9,8 +9,10 @@ from .target_dqn import TargetDQN
 
 class NStepA3C(TargetDQN):
     def __init__(self, input_shape, output_num, optimizer=None, network_generator=tf_util.create_a3c_network, q_discount=0.99,
-                 entropy_regularization=0.01, global_norm_clipping=40, initial_learning_rate=0.001, learning_rate_decay=None):
+                 entropy_regularization=0.01, global_norm_clipping=40, initial_learning_rate=0.001, learning_rate_decay=None,
+                 deterministic=False):
         self._entropy_regularization = entropy_regularization
+        self.deterministic = deterministic
         super().__init__(input_shape, output_num, None, optimizer=optimizer, network_generator=network_generator,
                          q_discount=q_discount, loss_clipping=None, global_norm_clipping=global_norm_clipping,
                          initial_learning_rate=initial_learning_rate, learning_rate_decay=learning_rate_decay)
@@ -114,7 +116,10 @@ class NStepA3C(TargetDQN):
         def get_output(sess, state):
             feed_dict = {x_input_channel_firstdim: state}
             actor_out_values = sess.run(actor_output, feed_dict=feed_dict)[0]
-            return get_action_from_probabilities(actor_out_values)
+            if self.deterministic:
+                return np.argmax(actor_out_values)
+            else:
+                return get_action_from_probabilities(actor_out_values)
 
         # function to train network
         def train_step(sess, states, actions, rewards, states_tp1, terminals, global_step=0, summaries=False):

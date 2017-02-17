@@ -55,7 +55,8 @@ class BaseThreadLearner(threading.Thread):
             curr_rand_val = ''
             if self.random_policy:
                 curr_rand_val = 'Curr Rand Val: {0}'.format(self.action_handler.curr_rand_val)
-            print(self, 'Episode reward:', reward, 'Step count:', self.step_count, curr_rand_val)
+            print(self, 'Episode reward:', reward, 'Steps:', self.environment.curr_step_count,
+                  'Step count:', self.step_count, curr_rand_val)
 
     def update(self, *args, **kwargs):
         raise NotImplementedError('Base onestep learner does not implement update.')
