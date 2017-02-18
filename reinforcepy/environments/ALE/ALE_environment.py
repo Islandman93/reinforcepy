@@ -22,7 +22,7 @@ class ALEEnvironment(BaseEnvironment):
     """
     def __init__(self, rom, resize_shape=(84, 84), skip_frame=1, repeat_action_probability=0.0,
                  step_cap=None, loss_of_life_termination=False, loss_of_life_negative_reward=False,
-                 display_screen=False, seed=np.random.RandomState()):
+                 grayscale=True, display_screen=False, seed=np.random.RandomState()):
         # set up emulator
         self.ale = ALEInterface()
 
@@ -38,6 +38,8 @@ class ALEEnvironment(BaseEnvironment):
 
         # setup gamescreen object. I think this is faster than recreating an empty each time
         width, height = self.ale.getScreenDims()
+        channels = 1 if grayscale else 3
+        self.grayscale = grayscale
         self.gamescreen = np.empty((height, width, 1), dtype=np.uint8)
 
         self.resize_shape = resize_shape
@@ -81,9 +83,17 @@ class ALEEnvironment(BaseEnvironment):
             return rew
 
     def get_state(self):
-        self.gamescreen = self.ale.getScreenGrayscale(self.gamescreen)
-        # convert ALE gamescreen into 84x84 image
-        processedImg = imresize(self.gamescreen[:, :, 0], self.resize_shape)
+        if self.grayscale:
+            self.gamescreen = self.ale.getScreenGrayscale(self.gamescreen)
+        else:
+            self.gamescreen = self.ale.getScreenRGB(self.gamescreen)
+        # if resize_shape is none then don't resize
+        if self.resize_shape is not None:
+            # if grayscale we remove the last dimmension (channel)
+            if self.grayscale:
+                processedImg = imresize(self.gamescreen[:, :, 0], self.resize_shape)
+            else:
+                processedImg = imresize(self.gamescreen, self.resize_shape)
         return processedImg
 
     def get_state_shape(self):

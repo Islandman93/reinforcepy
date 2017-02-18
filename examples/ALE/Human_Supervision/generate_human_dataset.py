@@ -9,7 +9,7 @@
 # arrow keys -> up/down/left/right
 # z -> fire button
 import sys
-from learningALE.libs.ale_python_interface import ALEInterface
+from ale_python_interface import ALEInterface
 import numpy as np
 import pygame
 import time
@@ -17,6 +17,7 @@ import os
 import pickle
 import copy
 from scipy.misc import imresize
+from pygame import surfarray
 
 key_action_tform_table = (
 0, #00000 none
@@ -54,8 +55,8 @@ key_action_tform_table = (
 )
 
 
-ale = ALEInterface(False)
-rom = b'D:\\_code\\montezuma_revenge.bin'
+ale = ALEInterface()
+rom = b'../roms/breakout.bin'
 
 ale.loadROM(rom)
 legal_actions = ale.getMinimalActionSet()
@@ -109,25 +110,15 @@ while(episode < 1):
     screen.fill((0,0,0))
 
     #get atari screen pixels and blit them
-    # get frames
-    frames = list()
     reward = 0
-    gamescreen = None
-    for frame in range(skipFrame):
-        gamescreen = ale.getScreenGrayscale(gamescreen)
-        # convert ALE gamescreen into usable image, scaled between 0 and 1
-        processedImg = gamescreen[33:-16, :, 0]
-        frames.append(processedImg)
+    gamescreen = ale.getScreenRGB()
+    currstates.append(gamescreen)
 
-        reward += ale.act(a)
+    reward += ale.act(a)
     total_reward += reward
     currrewards.append(reward)
-    currstates.append(imresize(np.asarray(frames), 0.525, interp='nearest'))
 
-    frames = np.swapaxes(np.asarray(frames),0,2)
-
-    from pygame import surfarray
-
+    frames = np.swapaxes(gamescreen, 0, 1)
     frames = surfarray.make_surface(frames)
     screen.blit(pygame.transform.scale(frames, (screen_width*2, screen_height*2)),(0,0))
 
@@ -180,9 +171,10 @@ while(episode < 1):
         break
 
     #delay to 60fps
-    clock.tick(30.)
+    clock.tick(60.)
 
     if(ale.game_over()):
+        # TODO: append state tp1
         episode_frame_number = ale.getEpisodeFrameNumber()
         frame_number = ale.getFrameNumber()
         print("Frame Number: " + str(frame_number) + " Episode Frame Number: " + str(episode_frame_number))
@@ -192,10 +184,10 @@ while(episode < 1):
         episode = episode + 1
         actions.append(copy.deepcopy(np.asarray(curractions, dtype=np.int8)))
         rewards.append(copy.deepcopy(np.asarray(currrewards, dtype=np.int8)))
-        states.append(copy.deepcopy(np.asarray(currstates, dtype=np.bool)))
+        states.append(copy.deepcopy(np.asarray(currstates, dtype=np.uint8)))
         curractions.clear()
         currrewards.clear()
         currstates.clear()
-with open(os.getcwd() + '/spc_inv_dataset.pkl', 'wb') as outFile:
+with open(os.getcwd() + '/human_dataset.pkl', 'wb') as outFile:
     pickle.dump((states, actions, rewards), outFile)
 

@@ -3,7 +3,7 @@ import json
 import numpy as np
 from reinforcepy.environments import ALEEnvironment
 from reinforcepy.networks.dqn.tflow.target_dqn import TargetDQN
-from reinforcepy.learners.dqn.asynchronous.dqn_thread_learner import DQNThreadLearner
+from reinforcepy.learners.dqn.asynchronous.q_thread_learner import QThreadLearner
 
 CONFIG = json.load(open('dqn_cfg.json'))
 
@@ -20,7 +20,7 @@ def main(model_path, rom_args, learner_args, network_args, num_threads, epochs, 
 
     # create threads
     del learner_args['epsilon_annealing_start']
-    learner = DQNThreadLearner(environment, network, {}, **learner_args, epsilon_annealing_start=0.01, testing=True)
+    learner = QThreadLearner(environment, network, {}, **learner_args, epsilon_annealing_start=0.01, testing=True)
 
     # run 100 episodes
     reward_list = []
