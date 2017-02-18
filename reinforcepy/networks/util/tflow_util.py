@@ -47,10 +47,10 @@ def nn_layer(input_tensor, shape, layer_name, act, conv, stride=None, variable_s
             with tf.name_scope('Wx_plus_b'):
                 preactivate = tf.matmul(input_tensor, weights) + biases
 
-        tf.histogram_summary(scope._name_scope + 'pre_activations', preactivate)
+        tf.summary.histogram(scope._name_scope + 'pre_activations', preactivate)
         if act is not None:
             activations = act(preactivate, name='activation')
-            tf.histogram_summary(scope._name_scope + 'activations', activations)
+            tf.summary.histogram(scope._name_scope + 'activations', activations)
             return activations
         else:
             return preactivate
@@ -60,13 +60,13 @@ def compute_variable_summaries(var, name):
     """Attach a lot of summaries to a Tensor."""
     with tf.name_scope('summaries'):
         mean = tf.reduce_mean(var)
-        tf.scalar_summary('mean/' + name, mean)
+        tf.summary.scalar('mean/' + name, mean)
         with tf.name_scope('stddev'):
             stddev = tf.sqrt(tf.reduce_mean(tf.square(var - mean)))
-        tf.scalar_summary('stddev/' + name, stddev)
-        tf.scalar_summary('max/' + name, tf.reduce_max(var))
-        tf.scalar_summary('min/' + name, tf.reduce_min(var))
-        tf.histogram_summary(name, var)
+        tf.summary.scalar('stddev/' + name, stddev)
+        tf.summary.scalar('max/' + name, tf.reduce_max(var))
+        tf.summary.scalar('min/' + name, tf.reduce_min(var))
+        tf.summary.histogram(name, var)
 
 
 def weight_variable_torch(name, shape, init='xavier', uniform=True):
@@ -115,7 +115,7 @@ def one_hot(select_from_tensor, index_tensor, output_num):
                          on_value=1.0, off_value=0.0, dtype=tf.float32)
     # we reduce sum here because the output could be negative we can't take the max
     # the other indecies will be 0
-    return tf.reduce_sum(tf.mul(select_from_tensor, one_hot), reduction_indices=1)
+    return tf.reduce_sum(tf.multiply(select_from_tensor, one_hot), axis=1)
 
 
 def create_nips_network(input_tensor, output_num):

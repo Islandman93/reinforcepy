@@ -92,7 +92,7 @@ class TargetDQN(BaseNetwork):
         if self.algorithm_type == 'double' or self.algorithm_type == 'doublenstep':
             with tf.name_scope('double_target'):
                 # Target = target_Q(s_tp1, argmax(online_Q(s_tp1)))
-                argmax_tp1 = tf.argmax(self._t_network_output_tp1, dimension=1)
+                argmax_tp1 = tf.argmax(self._t_network_output_tp1, axis=1)
                 self._t_target_value_online_action = tf_util.one_hot(self._t_target_network_output, argmax_tp1, output_num)
 
         # caclulate QLoss
@@ -105,11 +105,11 @@ class TargetDQN(BaseNetwork):
                         target = self._t_target_value_online_action
                     elif self.algorithm_type == 'dqn':
                         # Target = max(target_Q(s_tp1))
-                        target = tf.reduce_max(self._t_target_network_output, reduction_indices=1)
+                        target = tf.reduce_max(self._t_target_network_output, axis=1)
 
                     # compute a mask that returns gamma (discount factor) or 0 if terminal
-                    terminal_discount_mask = tf.mul(1.0 - tf.cast(self._t_x_terminals, tf.float32), self._t_x_discount)
-                    est_rew_tp1 = tf.mul(terminal_discount_mask, target)
+                    terminal_discount_mask = tf.multiply(1.0 - tf.cast(self._t_x_terminals, tf.float32), self._t_x_discount)
+                    est_rew_tp1 = tf.multiply(terminal_discount_mask, target)
 
                 y = self._t_x_rewards + tf.stop_gradient(est_rew_tp1)
             # else nstep

@@ -56,7 +56,7 @@ class NStepA3C(TargetDQN):
         # caclulate losses
         with tf.name_scope('loss'):
             with tf.name_scope('critic-reward-diff'):
-                critic_diff = tf.sub(critic_output, x_rewards)
+                critic_diff = tf.subtract(critic_output, x_rewards)
 
             with tf.name_scope('log-of-actor-policy'):
                 # Because of https://github.com/tensorflow/tensorflow/issues/206
@@ -68,15 +68,15 @@ class NStepA3C(TargetDQN):
                 # we reduce sum here because the output could be negative we can't take the max
                 # the other indecies will be 0
                 log_policy = tf.log(actor_output + 1e-6)
-                log_policy_one_hot = tf.mul(log_policy, x_actions_one_hot)
-                log_policy_action = tf.reduce_sum(log_policy_one_hot, reduction_indices=1)
+                log_policy_one_hot = tf.multiply(log_policy, x_actions_one_hot)
+                log_policy_action = tf.reduce_sum(log_policy_one_hot, axis=1)
 
             with tf.name_scope('actor-entropy'):
-                actor_entropy = tf.reduce_sum(tf.mul(actor_output, log_policy))
+                actor_entropy = tf.reduce_sum(tf.multiply(actor_output, log_policy))
                 summarizer.summarize(actor_entropy, 'scalar', 'actor-entropy')
 
             with tf.name_scope('actor-loss'):
-                actor_loss = tf.reduce_sum(tf.mul(log_policy_action, tf.stop_gradient(critic_diff)))
+                actor_loss = tf.reduce_sum(tf.multiply(log_policy_action, tf.stop_gradient(critic_diff)))
                 summarizer.summarize(actor_loss, 'scalar', 'actor-loss')
 
             with tf.name_scope('critic-loss'):

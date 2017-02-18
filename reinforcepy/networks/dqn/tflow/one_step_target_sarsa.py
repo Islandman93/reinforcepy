@@ -38,7 +38,7 @@ class OneStepTargetSARSA:
         config = tf.ConfigProto()
         config.gpu_options.allow_growth = True
         self.tf_session = tf.Session(graph=self.tf_graph, config=config)
-        self.tf_session.run(tf.initialize_all_variables())
+        self.tf_session.run(tf.global_variables_initializer())
 
     def create_network_graph(self, input_shape, output_num, network_generator, q_discount, optimizer, loss_clipping):
         # Input placeholders
@@ -94,7 +94,7 @@ class OneStepTargetSARSA:
         # caclulate QLoss
         with tf.name_scope('loss'):
             with tf.name_scope('estimated-reward-tp1'):
-                one_minus_term = tf.mul(1.0 - tf.cast(x_terminals, tf.float32), x_discount)
+                one_minus_term = tf.multiply(1.0 - tf.cast(x_terminals, tf.float32), x_discount)
                 # TODO: SARSA only change
                 # Sarsa uses the q estimate of the next state given action_tp1. Not the max
                 # We must convert to one hot same as below
@@ -103,8 +103,8 @@ class OneStepTargetSARSA:
                                                    on_value=1.0, off_value=0.0, dtype=tf.float32)
                 # we reduce sum here because the output could be negative we can't take the max
                 # the other indecies will be 0
-                network_est_rew_tp1 = tf.reduce_sum(tf.mul(target_network_output, x_actions_tp1_one_hot), reduction_indices=1)
-                est_rew_tp1 = tf.mul(one_minus_term, network_est_rew_tp1)
+                network_est_rew_tp1 = tf.reduce_sum(tf.multiply(target_network_output, x_actions_tp1_one_hot), axis=1)
+                est_rew_tp1 = tf.multiply(one_minus_term, network_est_rew_tp1)
 
             y = x_rewards + tf.stop_gradient(est_rew_tp1)
 
@@ -117,7 +117,7 @@ class OneStepTargetSARSA:
                                                on_value=1.0, off_value=0.0, dtype=tf.float32)
                 # we reduce sum here because the output could be negative we can't take the max
                 # the other indecies will be 0
-                est_rew = tf.reduce_sum(tf.mul(network_output, x_actions_one_hot), reduction_indices=1)
+                est_rew = tf.reduce_sum(tf.multiply(network_output, x_actions_one_hot), axis=1)
 
             with tf.name_scope('qloss'):
                 # clip loss but keep linear past clip bounds
