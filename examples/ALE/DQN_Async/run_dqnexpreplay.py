@@ -20,7 +20,7 @@ def main(rom_args, learner_args, network_args, algorithm_type, num_threads, epoc
     thread_host = AsyncThreadHost(network, log_dir=logdir)
 
     # create threads
-    threads = [ExpQThreadLearner(environments[t], network, thread_host.shared_dict, dataset_size=100000//num_threads, batch_size=32, **learner_args) for t in range(num_threads)]
+    threads = [ExpQThreadLearner(environments[t], network, thread_host.shared_dict, dataset_size=1000000//num_threads, batch_size=5, **learner_args) for t in range(num_threads)]
 
     reward_list = thread_host.run_epochs(epochs, threads, save_interval=save_interval)
 

@@ -15,8 +15,6 @@ class BaseNetwork:
         self.saver = None
 
         # these functions are created by create_network_graph
-        self._get_output = None
-        self._train_step = None
         self._save_variables = None
 
         with tf.Graph().as_default() as graph:
