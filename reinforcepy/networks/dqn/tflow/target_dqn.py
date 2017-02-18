@@ -165,7 +165,7 @@ class TargetDQN(BaseNetwork):
         # if not nstep we pass all vars to gpu
         if self.algorithm_type != 'nstep' and self.algorithm_type != 'doublenstep':
             feed_dict = {self._t_x_input_channel_firstdim: states, self._t_x_input_tp1_channel_firstdim: states_tp1,
-                         self._t_x_actions: actions, self._t_x_rewards: self._t_rewards, self._t_x_terminals: terminals,
+                         self._t_x_actions: actions, self._t_x_rewards: rewards, self._t_x_terminals: terminals,
                          self._tf_learning_rate: self.current_learning_rate}
         # else nstep calculate TD reward
         else:
@@ -210,7 +210,7 @@ class TargetDQN(BaseNetwork):
             self._target_network_next_update_step += self.target_network_update_steps
             logger = logging.getLogger(__name__)
             logger.info('Updating target network')
-            self._update_target_network(self.tf_session)
+            self.update_target_net(self.tf_session)
 
     def anneal_learning_rate(self, global_step):
         self.learning_rate_annealer.anneal_to(global_step)
