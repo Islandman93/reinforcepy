@@ -1,9 +1,9 @@
 import numpy as np
 from reinforcepy.learners import BaseQLearner
-from .onestep_base_thread_learner import OneStepBaseThreadLearner
+from .base_thread_learner import BaseThreadLearner
 
 
-class OneStepDQNThreadLearner(OneStepBaseThreadLearner, BaseQLearner):
+class QThreadLearner(BaseThreadLearner, BaseQLearner):
     def update(self, state, action, reward, state_tp1, terminal):
         self.frame_buffer.add_state_to_buffer(state)
 
@@ -23,25 +23,19 @@ class OneStepDQNThreadLearner(OneStepBaseThreadLearner, BaseQLearner):
         self.step_count += 1
         self.global_dict['counter'] += 1
 
-        # check update target
-        if self.check_update_target(self.global_dict["counter"]):
-            print(self, 'setting target')
-            self.network.update_target_network()
-
         # check perform gradient step
         if self.step_count % self.async_update_step == 0 or terminal:
             summaries = self.global_dict['write_summaries_this_step']
             if summaries:
                 self.global_dict['write_summaries_this_step'] = False
-                summary = self.network.train_step(self.global_dict['learning_rate'], *self.get_minibatch_vars(), summaries=True)
+                summary = self.network.train_step(*self.get_minibatch_vars(), global_step=self.global_dict['counter'], summaries=True)
                 self.global_dict['summary_writer'].add_summary(summary, global_step=self.global_dict['counter'])
             else:
-                self.network.train_step(self.global_dict['learning_rate'], *self.get_minibatch_vars(), summaries=False)
+                self.network.train_step(*self.get_minibatch_vars(), global_step=self.global_dict['counter'], summaries=False)
             self.reset_minibatch()
 
         # anneal action handler
-        anneal_step = self.global_dict['counter'] if self.global_epsilon_annealing else self.step_count
-        self.action_handler.anneal_to(anneal_step)
+        self.anneal_random_policy()
 
     def minibatch_accumulate(self, state, action, reward, state_tp1, terminal):
         self.minibatch_vars['states'].append(state[0])

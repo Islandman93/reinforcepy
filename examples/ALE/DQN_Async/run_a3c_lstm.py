@@ -1,8 +1,8 @@
 import json
 import datetime
 from reinforcepy.environments import ALEEnvironment
-from reinforcepy.networks.dqn.tflow.nstep_a3c import NStepA3C
-from reinforcepy.learners.dqn.asynchronous.q_thread_learner import QThreadLearner
+from reinforcepy.networks.dqn.tflow.nstep_a3c_lstm import NStepA3CLSTM
+from reinforcepy.learners.dqn.asynchronous.recurrent_thread_learner import RecurrentThreadLearner
 from reinforcepy.learners.dqn.asynchronous.async_thread_host import AsyncThreadHost
 
 
@@ -13,13 +13,13 @@ def main(rom_args, learner_args, network_args, num_threads, epochs, logdir, save
     # create shared network
     num_actions = environments[0].get_num_actions()
     input_shape = [learner_args['phi_length']] + environments[0].get_state_shape()
-    network = NStepA3C(input_shape, num_actions, **network_args)
+    network = NStepA3CLSTM(input_shape, num_actions, **network_args)
 
     # create thread host
     thread_host = AsyncThreadHost(network, log_dir=logdir)
 
     # create threads
-    threads = [QThreadLearner(environments[t], network, thread_host.shared_dict, **learner_args) for t in range(num_threads)]
+    threads = [RecurrentThreadLearner(environments[t], network, thread_host.shared_dict, **learner_args) for t in range(num_threads)]
 
     reward_list = thread_host.run_epochs(epochs, threads, save_interval=save_interval)
 
@@ -33,5 +33,5 @@ def main(rom_args, learner_args, network_args, num_threads, epochs, logdir, save
 if __name__ == '__main__':
     CONFIG = json.load(open('a3c_cfg.json'))
     run_date = datetime.datetime.now().strftime("%m-%d-%Y-%H-%M")
-    CONFIG['logdir'] += '_' + run_date + '/'
+    CONFIG['logdir'] += 'lstm_' + run_date + '/'
     main(**CONFIG)

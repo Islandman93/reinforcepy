@@ -16,10 +16,13 @@ class ALEEnvironment(BaseEnvironment):
         Specifies the directory to load the rom from. Must be a byte string: b'dir_for_rom/rom.bin'
     display_screen : boolean
         Default False. Whether or not to show the game. True takes longer to run but can be fun to watch
+    step_cap: int
+        Default None. Maximum number of steps to run in an episode. Breakout can sometimes not return terminal
+        even when game is ended. This fixes that and will return terminal after stepping above this count
     """
     def __init__(self, rom, resize_shape=(84, 84), skip_frame=1, repeat_action_probability=0.0,
-                 loss_of_life_termination=False, loss_of_life_negative_reward=False, display_screen=False,
-                 seed=np.random.RandomState()):
+                 step_cap=None, loss_of_life_termination=False, loss_of_life_negative_reward=False,
+                 grayscale=True, display_screen=False, seed=np.random.RandomState()):
         # set up emulator
         self.ale = ALEInterface()
 
@@ -35,11 +38,14 @@ class ALEEnvironment(BaseEnvironment):
 
         # setup gamescreen object. I think this is faster than recreating an empty each time
         width, height = self.ale.getScreenDims()
+        channels = 1 if grayscale else 3
+        self.grayscale = grayscale
         self.gamescreen = np.empty((height, width, 1), dtype=np.uint8)
 
         self.resize_shape = resize_shape
-
         self.skip_frame = skip_frame
+        self.step_cap = step_cap
+        self.curr_step_count = 0
 
         # setup action converter
         # ALE returns legal action indexes, convert these to just numbers
@@ -55,8 +61,10 @@ class ALEEnvironment(BaseEnvironment):
         self.ale.reset_game()
         self.cur_lives = self.ale.lives()
         self.life_lost = False
+        self.curr_step_count = 0
 
     def step(self, action):
+        self.curr_step_count += 1
         ale_action = self.action_inds[action]
         return self._step(ale_action)
 
@@ -75,9 +83,17 @@ class ALEEnvironment(BaseEnvironment):
             return rew
 
     def get_state(self):
-        self.gamescreen = self.ale.getScreenGrayscale(self.gamescreen)
-        # convert ALE gamescreen into 84x84 image
-        processedImg = imresize(self.gamescreen[:, :, 0], self.resize_shape)
+        if self.grayscale:
+            self.gamescreen = self.ale.getScreenGrayscale(self.gamescreen)
+        else:
+            self.gamescreen = self.ale.getScreenRGB(self.gamescreen)
+        # if resize_shape is none then don't resize
+        if self.resize_shape is not None:
+            # if grayscale we remove the last dimmension (channel)
+            if self.grayscale:
+                processedImg = imresize(self.gamescreen[:, :, 0], self.resize_shape)
+            else:
+                processedImg = imresize(self.gamescreen, self.resize_shape)
         return processedImg
 
     def get_state_shape(self):
@@ -85,6 +101,8 @@ class ALEEnvironment(BaseEnvironment):
 
     def get_terminal(self):
         if self.loss_of_life_termination and self.life_lost:
+            return True
+        elif self.step_cap is not None and self.curr_step_count > self.step_cap:
             return True
         else:
             return self.ale.game_over()

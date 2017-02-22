@@ -5,9 +5,13 @@ class LinnearAnnealer:
     def __init__(self, start, end, steps):
         self.start = start
         self.end = end
-        lin = np.linspace(start, end, steps)
         self.curr_val = start
-        self.diff = lin[0] - lin[1]
+
+        if steps is not None:
+            lin = np.linspace(start, end, steps)
+            self.diff = lin[0] - lin[1]
+        else:
+            self.diff = 0
 
     def anneal(self):
         """

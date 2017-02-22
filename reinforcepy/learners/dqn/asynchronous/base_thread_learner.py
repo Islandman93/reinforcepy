@@ -4,9 +4,9 @@ from reinforcepy.handlers import ActionHandler
 from reinforcepy.handlers.framebuffer import FrameBuffer
 
 
-class OneStepBaseThreadLearner(threading.Thread):
+class BaseThreadLearner(threading.Thread):
     def __init__(self, environment, network, global_dict, phi_length=4,
-                 async_update_step=5, target_update_steps=10000, reward_clip_vals=[-1, 1], random_policy=True, epsilon_annealing_start=1,
+                 async_update_step=5, reward_clip_vals=[-1, 1], random_policy=True, epsilon_annealing_start=1,
                  epsilon_annealing_choices=[0.1, 0.01, 0.5], epsilon_annealing_probabilities=[0.4, 0.3, 0.3],
                  epsilon_annealing_steps=1000000, global_epsilon_annealing=True,
                  testing=False):
@@ -30,7 +30,6 @@ class OneStepBaseThreadLearner(threading.Thread):
         self.frame_buffer = FrameBuffer([1, phi_length] + environment.get_state_shape())
 
         self.async_update_step = async_update_step
-        self.target_update_steps = target_update_steps
         self.global_dict = global_dict
         self.global_epsilon_annealing = global_epsilon_annealing
 
@@ -56,21 +55,11 @@ class OneStepBaseThreadLearner(threading.Thread):
             curr_rand_val = ''
             if self.random_policy:
                 curr_rand_val = 'Curr Rand Val: {0}'.format(self.action_handler.curr_rand_val)
-            print(self, 'Episode reward:', reward, 'Step count:', self.step_count, curr_rand_val)
+            print(self, 'Episode reward:', reward, 'Steps:', self.environment.curr_step_count,
+                  'Step count:', self.step_count, curr_rand_val)
 
     def update(self, *args, **kwargs):
-        raise NotImplementedError('Base onestep learner does not implement update. Use DQN or SARSA learners')
-
-    def check_update_target(self, total_step_count):
-        if total_step_count >= self.global_dict["target_update_count"] * self.target_update_steps:
-            self.global_dict["target_update_count"] += 1
-            return True
-        return False
-
-    def possibly_update_target(self):
-        if self.check_update_target(self.global_dict["counter"]):
-            print(self, 'setting target')
-            self.network.update_target_network()
+        raise NotImplementedError('Base onestep learner does not implement update.')
 
     def anneal_random_policy(self):
         if self.random_policy:
@@ -87,9 +76,10 @@ class OneStepBaseThreadLearner(threading.Thread):
             # check if doing random action
             random, action = self.action_handler.get_random()
             if not random:
-                cnn_action_values = self.network.get_output(self.frame_buffer.get_buffer_with(state))
-                return np.argmax(cnn_action_values)
+                return self.network.get_output(self.frame_buffer.get_buffer_with(state))
             return action
         else:
-            cnn_action_values = self.network.get_output(self.frame_buffer.get_buffer_with(state))
-            return np.argmax(cnn_action_values)
+            return self.network.get_output(self.frame_buffer.get_buffer_with(state))
+
+    def reset_minibatch(self):
+        pass

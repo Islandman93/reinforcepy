@@ -21,8 +21,8 @@ def dqn_nips_network(network_parms, training_parms):
         x_rewards = tf.placeholder(tf.float32, [training_parms.get('minibatch_size')], name='x-rewards')
         x_terminals = tf.placeholder(tf.bool, [training_parms.get('minibatch_size')], name='x-terminals')
         x_discount = training_parms.get('discount')
-        tf.image_summary('input', x_input, max_images=10)
-        tf.image_summary('input_tp1', x_input_tp1, max_images=10)
+        tf.summary.image('input', x_input, max_images=10)
+        tf.summary.image('input_tp1', x_input_tp1, max_images=10)
 
     with tf.variable_scope('network-outputs') as scope:
         with tf.name_scope('output-train-t'):
@@ -39,8 +39,8 @@ def dqn_nips_network(network_parms, training_parms):
 
     with tf.name_scope('loss'):
         with tf.name_scope('estimated-reward-tp1'):
-            one_minus_term = tf.mul(1.0 - tf.cast(x_terminals, tf.float32), x_discount)
-            est_rew_tp1 = tf.mul(one_minus_term, tf.reduce_max(network_output_tp1, reduction_indices=1))
+            one_minus_term = tf.multiply(1.0 - tf.cast(x_terminals, tf.float32), x_discount)
+            est_rew_tp1 = tf.multiply(one_minus_term, tf.reduce_max(network_output_tp1, axis=1))
 
         y = x_rewards + est_rew_tp1
 
@@ -50,12 +50,12 @@ def dqn_nips_network(network_parms, training_parms):
             # multiply then take the max over last dim
             # NumPy/Theano est_rew = network_output[:, x_actions]
             x_actions_one_hot = tf.one_hot(x_actions, depth=network_parms.get('output_num'), name='one-hot')
-            est_rew = tf.reduce_max(tf.mul(network_output, x_actions_one_hot), reduction_indices=1)
+            est_rew = tf.reduce_max(tf.multiply(network_output, x_actions_one_hot), axis=1)
 
         with tf.name_scope('qloss'):
             diff = (y - est_rew)**2.0
             mse = tf.reduce_mean(diff)
-        tf.scalar_summary('loss', mse)
+        tf.summary.scalar('loss', mse)
 
     with tf.name_scope('optimizer'):
         tf_learning_rate = tf.placeholder(tf.float32)
@@ -63,7 +63,7 @@ def dqn_nips_network(network_parms, training_parms):
         train_step = optimizer.minimize(mse)
 
     # Merge all the summaries
-    merged_summaries = tf.merge_all_summaries()
+    merged_summaries = tf.summary.merge_all()
 
     def train(sess, learning_rate, state, action, reward, state_tp1, terminal, run_summaries=False, **kwargs):
         feed_dict = {x_input_channel_firstdim: state, x_input_tp1_channel_firstdim: state_tp1,

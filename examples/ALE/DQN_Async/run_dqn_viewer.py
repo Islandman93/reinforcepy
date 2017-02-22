@@ -1,33 +1,33 @@
 import sys
-import numpy as np
 import json
+import numpy as np
 from reinforcepy.environments import ALEEnvironment
-from reinforcepy.networks.dqn.tflow.one_step_target_dqn import OneStepTargetDQN
-from reinforcepy.learners.dqn.asynchronous.onestep_dqn_thread_learner import OneStepDQNThreadLearner
+from reinforcepy.networks.dqn.tflow.target_dqn import TargetDQN
+from reinforcepy.learners.dqn.asynchronous.q_thread_learner import QThreadLearner
 
-CONFIG = json.load(open('onestep_cfg.json'))
+CONFIG = json.load(open('dqn_cfg.json'))
 
 
-def main(model_path, rom_args, learner_args, network_args, num_threads, initial_learning_rate, epochs, logdir, save_interval):
+def main(model_path, rom_args, learner_args, network_args, num_threads, epochs, logdir, save_interval):
     # create env
     environment = ALEEnvironment(**rom_args)
 
     # create network then load
     num_actions = environment.get_num_actions()
     input_shape = [learner_args['phi_length']] + environment.get_state_shape()
-    network = OneStepTargetDQN(input_shape, num_actions, **network_args)
+    network = TargetDQN(input_shape, num_actions, 'dqn', **network_args)
     network.load(model_path)
 
     # create threads
     del learner_args['epsilon_annealing_start']
-    learner = OneStepDQNThreadLearner(environment, network, {}, **learner_args, epsilon_annealing_start=0.01, testing=True)
+    learner = QThreadLearner(environment, network, {}, **learner_args, epsilon_annealing_start=0.01, testing=True)
 
     # run 100 episodes
     reward_list = []
     try:
         for _ in range(100):
             reward = learner.run_episode(environment)
-            print('Episode: {0}. Reward:'.format(_), reward)
+            print('Episode: {}. Steps: {}. Reward: {}'.format(_, environment.curr_step_count, reward))
             reward_list.append(reward)
     except KeyboardInterrupt:
         pass

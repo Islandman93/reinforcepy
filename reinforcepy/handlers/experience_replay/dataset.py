@@ -93,23 +93,18 @@ actions, and rewards.
 
     def random_batch(self, batch_size):
         """Return corresponding states, actions, rewards, terminal status, and
-next_states for batch_size randomly chosen state transitions.
+           next_states for batch_size randomly chosen state transitions.
 
         """
         # Allocate the response.
-        states = np.zeros((batch_size,
-                           self.phi_length,
-                           self.height,
-                           self.width),
-                          dtype=floatX)
-        actions = np.zeros((batch_size), dtype='int32')
-        rewards = np.zeros((batch_size), dtype=floatX)
-        terminal = np.zeros((batch_size), dtype='bool')
-        next_states = np.zeros((batch_size,
-                                self.phi_length,
-                                self.height,
-                                self.width),
-                               dtype=floatX)
+        imgs = np.empty((batch_size,
+                         self.phi_length + 1,
+                         self.height,
+                         self.width),
+                        dtype='uint8')
+        actions = np.empty((batch_size), dtype='int32')
+        rewards = np.empty((batch_size), dtype=floatX)
+        terminal = np.empty((batch_size), dtype='bool')
 
         count = 0
         while count < batch_size:
@@ -117,31 +112,71 @@ next_states for batch_size randomly chosen state transitions.
             index = self.rng.randint(self.bottom,
                                      self.bottom + self.size - self.phi_length)
 
-            initial_indices = np.arange(index, index + self.phi_length)
-            transition_indices = initial_indices + 1
+            # Both the before and after states contain phi_length
+            # frames, overlapping except for the first and last.
+            all_indices = np.arange(index, index + self.phi_length + 1)
             end_index = index + self.phi_length - 1
 
             # Check that the initial state corresponds entirely to a
-            # single episode, meaning none but the last frame may be
-            # terminal. If the last frame of the initial state is
-            # terminal, then the last frame of the transitioned state
-            # will actually be the first frame of a new episode, which
-            # the Q learner recognizes and handles correctly during
-            # training by zeroing the discounted future reward estimate.
-            if np.any(self.terminal.take(initial_indices[0:-1], mode='wrap')):
+            # single episode, meaning none but its last frame (the
+            # second-to-last frame in imgs) may be terminal. If the last
+            # frame of the initial state is terminal, then the last
+            # frame of the transitioned state will actually be the first
+            # frame of a new episode, which the Q learner recognizes and
+            # handles correctly during training by zeroing the
+            # discounted future reward estimate.
+            if np.any(self.terminal.take(all_indices[0:-2], mode='wrap')):
                 continue
 
             # Add the state transition to the response.
-            states[count] = self.imgs.take(initial_indices, axis=0, mode='wrap')
+            imgs[count] = self.imgs.take(all_indices, axis=0, mode='wrap')
             actions[count] = self.actions.take(end_index, mode='wrap')
             rewards[count] = self.rewards.take(end_index, mode='wrap')
             terminal[count] = self.terminal.take(end_index, mode='wrap')
-            next_states[count] = self.imgs.take(transition_indices,
-                                                axis=0,
-                                                mode='wrap')
             count += 1
 
-        return states, actions, rewards, next_states, terminal
+        return imgs[:, 0:-1], actions, rewards, imgs[:, 1:], terminal
+
+    def random_sequential_batch(self, batch_size):
+        """Return corresponding states, actions, rewards, terminal status, and
+           next_states for batch_size a random sequential set of state transitions.
+
+        """
+        # Allocate the response.
+        imgs = np.empty((batch_size,
+                         self.phi_length + 1,
+                         self.height,
+                         self.width),
+                        dtype='uint8')
+        actions = np.empty((batch_size), dtype='int32')
+        rewards = np.empty((batch_size), dtype=floatX)
+
+        # find a good starting index that does not have a terminal except at the end
+        good_ind = False
+        while not good_ind:
+            # Randomly choose a time step from the replay memory.
+            # Since this will be the bottom index it must be batch_size*phi_length from the end
+            # NOTE: randint high is exclusive so we don't need to subtract 1
+            index = self.rng.randint(self.bottom,
+                                     self.bottom + self.size -
+                                     batch_size - self.phi_length)
+
+            all_indices = np.arange(index, index + batch_size + self.phi_length)
+            terminals = self.terminal.take(all_indices, mode='wrap')
+            if np.any(terminals[0:-1]):
+                good_ind = False
+            else:
+                good_ind = True
+
+        # found a good start ind create sequential batch
+        for b in range(batch_size):
+            # NOTE: axis 0 is required here
+            imgs[b] = self.imgs.take(all_indices[b:b + self.phi_length + 1], axis=0, mode='wrap')
+            end_index = b + self.phi_length - 1
+            actions[b] = self.actions.take(all_indices[end_index], mode='wrap')
+            rewards[b] = self.rewards.take(all_indices[end_index], mode='wrap')
+
+        return imgs[:, 0:-1], actions, rewards, imgs[:, 1:], terminals[-batch_size:]
 
 
 # TESTING CODE BELOW THIS POINT...
@@ -168,10 +203,10 @@ def simple_tests():
         print()
     print("LAST PHI", dataset.last_phi())
     print()
-    print('BATCH', dataset.random_batch(2))
+    print('BATCH', dataset.random_batch(1))
 
 
-def speed_tests():
+def speed_tests(sequential=False):
 
     dataset = DataSet(width=80, height=80,
                       rng=np.random.RandomState(42),
@@ -189,11 +224,13 @@ def speed_tests():
     print("samples per second: ", 100000 / (time.time() - start))
 
     start = time.time()
-    for i in range(200):
-        a = dataset.random_batch(32)
-    print("batches per second: ", 200 / (time.time() - start))
-
-    print(dataset.last_phi())
+    for i in range(2000):
+        if sequential:
+            dataset.random_sequential_batch(32)
+        else:
+            dataset.random_batch(32)
+    print("batches per second: ", 2000 / (time.time() - start))
+    # print(a)
 
 
 def trivial_tests():
@@ -238,10 +275,10 @@ def test_memory_usage_ok():
     import memory_profiler
     dataset = DataSet(width=80, height=80,
                       rng=np.random.RandomState(42),
-                      max_steps=100000, phi_length=4)
+                      max_steps=1600000, phi_length=4)
     last = time.time()
 
-    for i in xrange(1000000000):
+    for i in range(1000000000):
         if (i % 100000) == 0:
             print(i)
         dataset.add_sample(np.random.random((80, 80)), 1, 1, False)
@@ -255,11 +292,23 @@ def test_memory_usage_ok():
         last = time.time()
 
 
+def test_random_sequential_batch():
+    dataset = DataSet(width=2, height=2,
+                      max_steps=20, phi_length=4)
+    for i in range(20):
+        dataset.add_sample(np.asarray([[i, i], [i*10, i*10]]), i, i, (i+1) % 10 == 0)
+    print(dataset.random_sequential_batch(3))
+
+
 def main():
-    speed_tests()
-    test_memory_usage_ok()
-    max_size_tests()
-    simple_tests()
+    print('non sequential')
+    speed_tests(False)
+    print('sequential')
+    speed_tests(True)
+    # test_memory_usage_ok()
+    # max_size_tests()
+    # simple_tests()
+    # test_random_sequential_batch()
 
 if __name__ == "__main__":
     main()

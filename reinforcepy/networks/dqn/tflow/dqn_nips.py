@@ -9,13 +9,13 @@ class DQN_NIPS:
 
             # create tf session and init vars
             self.tf_session = tf.Session(graph=graph)
-            self.tf_session.run(tf.initialize_all_variables())
+            self.tf_session.run(tf.global_variables_initializer())
             self.tf_saver = tf.train.Saver()
 
             # if we are logging
             if log_dir is not None:
                 self.logging = True
-                self.summary_writer = tf.train.SummaryWriter(log_dir, graph=graph)
+                self.summary_writer = tf.summary.FileWriter(log_dir, graph=graph)
                 self.log_metadata = log_metadata
                 self.log_steps = log_steps
             else:
