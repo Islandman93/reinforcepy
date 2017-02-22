@@ -12,6 +12,7 @@ events.out.tfevents.*
 
 # vscode
 .vscode/
+tags
 
 
 # Byte-compiled / optimized / DLL files

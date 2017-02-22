@@ -35,12 +35,12 @@ class PyTest(TestCommand):
 
 setup(
     name='ReinforcePy',
-    version=0.2,
+    version=0.3,
     url='http://github.com/islandman93/reinforcepy',
     license='GNU License',
     author='IslandMan93',
     tests_require=['pytest'],
-    install_requires=['numpy>=1.8.x', 'tensorflow>=0.9', 'tflearn>=0.2'],
+    install_requires=['tensorflow>=1.0', 'tflearn>=0.3'],
     cmdclass={'test': PyTest},
     author_email='islandman93@gmail.com',
     description='Collection of reinforcement learners implemented in python.',
@@ -49,7 +49,7 @@ setup(
     include_package_data=True,
     platforms='any',
     test_suite='reinforcepy.test.test_reinforcepy',
-    classifiers = [
+    classifiers=[
         'Programming Language :: Python',
         'Development Status :: Alpha',
         'Natural Language :: English',
