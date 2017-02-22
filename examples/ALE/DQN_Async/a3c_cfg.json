@@ -10,7 +10,8 @@
   "learner_args": {
     "phi_length": 4,
     "async_update_step": 5,
-    "reward_clip_vals" : [-1, 1]
+    "reward_clip_vals" : [-1, 1],
+    "random_policy": false
   },
   "network_args": {
     "q_discount": 0.99,
