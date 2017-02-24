@@ -15,8 +15,8 @@ Example usage, trained models, and results can be found under
 [examples/ALE/](examples/ALE).
 A more in depth look at implementation details can be found in the wiki.
 
-## Installation
-If you don't already I recommend using [Anaconda](https://www.continuum.io/downloads) to manage python environments, it also makes installation of Numpy & Scipy  a breeze. Required packages:
+## Installation (requires Python 3)
+If you don't already I recommend using [Anaconda](https://www.continuum.io/downloads) to manage python environments, it also makes installation of Numpy & Scipy a breeze. Required packages:
 
 - [NumPy](http://www.scipy.org/scipylib/download.html) (conda install numpy)
 - [SciPy](https://www.scipy.org/install.html) (conda install scipy)
