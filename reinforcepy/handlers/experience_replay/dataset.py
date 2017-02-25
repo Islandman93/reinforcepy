@@ -142,6 +142,10 @@ actions, and rewards.
            next_states for batch_size a random sequential set of state transitions.
 
         """
+        if self.size < batch_size + self.phi_length:
+            return None, None, None, None, None
+
+        # if requested size is greater than our size
         # Allocate the response.
         imgs = np.empty((batch_size,
                          self.phi_length + 1,
@@ -153,6 +157,7 @@ actions, and rewards.
 
         # find a good starting index that does not have a terminal except at the end
         good_ind = False
+        # TODO: add in a max tries command, otherwise this could stop processing forever
         while not good_ind:
             # Randomly choose a time step from the replay memory.
             # Since this will be the bottom index it must be batch_size*phi_length from the end

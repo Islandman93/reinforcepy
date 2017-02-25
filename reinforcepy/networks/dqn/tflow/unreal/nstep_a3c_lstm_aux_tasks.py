@@ -1,9 +1,10 @@
 from copy import deepcopy
 import numpy as np
 import tensorflow as tf
+from tensorflow.contrib.layers import flatten as tf_flatten
 import tflearn
 import tflearn.helpers.summarizer as summarizer
-from .target_dqn import TargetDQN
+from ..target_dqn import TargetDQN
 
 
 def create_a3c_lstm_network(input_tensor, output_num):
@@ -33,10 +34,10 @@ def create_a3c_lstm_network(input_tensor, output_num):
     actor_out = tflearn.fully_connected(l_lstm4_reshape, output_num, activation='softmax', scope='actorout')
     critic_out = tflearn.fully_connected(l_lstm4_reshape, 1, activation='linear', scope='criticout')
 
-    return actor_out, critic_out, initial_lstm_state, new_lstm_state
+    return actor_out, critic_out, initial_lstm_state, new_lstm_state, l_lstm4_reshape
 
 
-class NStepA3CLSTM(TargetDQN):
+class NStepA3CLSTMUNREAL(TargetDQN):
     def __init__(self, input_shape, output_num, optimizer=None, network_generator=create_a3c_lstm_network, q_discount=0.99,
                  entropy_regularization=0.01, global_norm_clipping=40, initial_learning_rate=0.001, learning_rate_decay=None):
         self._entropy_regularization = entropy_regularization
@@ -61,7 +62,7 @@ class NStepA3CLSTM(TargetDQN):
             x_rewards = tf.placeholder(tf.float32, shape=[None], name='x-rewards')
 
         with tf.variable_scope('network'):
-            actor_output, critic_output, initial_lstm_state, new_lstm_state = self._network_generator(x_input, output_num)
+            actor_output, critic_output, initial_lstm_state, new_lstm_state, lstm_output = self._network_generator(x_input, output_num)
             # flatten the critic_output NOTE: THIS IS VERY IMPORTANT
             # otherwise critic_output will be (batch_size, 1) and all ops with it and x_rewards will create a
             # tensor of shape (batch_size, batch_size)
@@ -82,7 +83,7 @@ class NStepA3CLSTM(TargetDQN):
             # # add network summaries
             # summarizer.summarize_variables(train_vars=network_trainables)
 
-        # caclulate losses
+        # caculate losses
         with tf.name_scope('loss'):
             with tf.name_scope('critic-reward-diff'):
                 critic_diff = tf.subtract(critic_output, x_rewards)
@@ -109,9 +110,9 @@ class NStepA3CLSTM(TargetDQN):
                 summarizer.summarize(actor_loss, 'scalar', 'actor-loss')
 
             with tf.name_scope('critic-loss'):
-                # TODO: why are we multiplying by 0.5 again
-                critic_loss = tf.nn.l2_loss(critic_diff) * 0.5
+                critic_loss = tf.nn.l2_loss(critic_diff)
                 summarizer.summarize(critic_loss, 'scalar', 'critic-loss')
+                value_replay_critic_loss_summary = tf.summary.scalar('value-replay-critic-loss', critic_loss)
 
             with tf.name_scope('total-loss'):
                 # NOTICE: we are summing gradients
@@ -120,6 +121,58 @@ class NStepA3CLSTM(TargetDQN):
                 # https://www.wolframalpha.com/input/?i=log(x)+*+x
                 total_loss = tf.reduce_sum(critic_loss + actor_loss + (actor_entropy * self._entropy_regularization))
                 summarizer.summarize(total_loss, 'scalar', 'total-loss')
+
+        with tf.name_scope('pixel-control'):
+            # add input for states_tp1
+            aux_pc_input_tp1_channel_firstdim = tf.placeholder(tf.uint8, [None] + input_shape, name='aux-pc-input-tp1')
+            # transpose because tf wants channels on last dim and channels are passed in on 2nd dim
+            aux_pc_input_tp1 = tf.cast(tf.transpose(aux_pc_input_tp1_channel_firstdim, perm=[0, 2, 3, 1]), tf.float32) / 255.0
+            # crop to 80x80 assumes 84x84
+            states_cropped = x_input[:, 2:82, 2:82, :]
+            states_tp1_cropped = aux_pc_input_tp1[:, 2:82, 2:82, :]
+            # extract 20x20 4x4x4 (flattened) image patches
+            # for a batch_sizex80x80x4 image this gives a batch_sizex20x20x(4h*4w*4c)
+            states_patches = tf.extract_image_patches(states_cropped, [1, 4, 4, 1], [1, 4, 4, 1], [1, 1, 1, 1], padding='VALID')
+            states_tp1_patches = tf.extract_image_patches(states_tp1_cropped, [1, 4, 4, 1], [1, 4, 4, 1], [1, 1, 1, 1], padding='VALID')
+            # the average abs distance is taken over pixels and channels which is the last dimension
+            reward_pixel_difference = tf.reduce_mean(tf.abs(states_patches - states_tp1_patches), axis=-1)
+            # now we have rewards over batch_sizex20x20
+            reward_pixel_diff_summary = tf.summary.image('pixel-difference', tf.expand_dims(reward_pixel_difference, axis=-1))
+
+            # create aux deconv net
+            # first map lstm output batchsizex256 -> 7x7x32 = 1568
+            deconv_linear = tflearn.fully_connected(lstm_output, 1568, activation='relu')
+            deconv_linear = tf.reshape(deconv_linear, (-1, 7, 7, 32))  # since this layer is learned it doesn't matter how we reshape
+            # original paper doesn't use tensorflow I guess, deconv of 4x4 filter doesn't result in the right shape
+            # 7x7 * 2 = 14x14 + 4 == 18x18, 8x8 * 2 = 16x16 + 4 = 20x20 so we pad with 1 set of zeros
+            # TODO: figure out why these are different, or just make the fully connected output 8x8x32
+            # deconv_linear = tf.pad(deconv_linear, [[0, 0], [1, 0], [1, 0], [0, 0]])
+            deconv_value = tflearn.conv_2d_transpose(deconv_linear, 1, 4, [20, 20], strides=1, padding='valid')
+            deconv_advantage = tflearn.conv_2d_transpose(deconv_linear, output_num, 4, [20, 20], strides=1, padding='valid')
+
+            deconv_value_summary = tf.summary.image('deconv-value', deconv_value)
+            for i in range(output_num):
+                if i == 0:
+                    deconv_advantage_summary = tf.summary.image('deconv-advantage-{0}'.format(i),
+                                                                tf.expand_dims(deconv_advantage[:, :, :, i], axis=-1))
+                else:
+                    deconv_advantage_summary = tf.summary.merge([deconv_advantage_summary, tf.summary.image('deconv-advantage-{0}'.format(i),
+                                                                 tf.expand_dims(deconv_advantage[:, :, :, i], axis=-1))])
+
+            # get the dueling Q output values, V(s) + (A(s,a) - mean(A(s)))
+            deconv_q_values = deconv_value + (deconv_advantage - tf.reduce_mean(deconv_advantage, axis=-1, keep_dims=True))
+            # shape is batch_sizex20x20xoutput_num
+
+            # get deconv_q_values(s,a) from actions, sum over last dimension to get the one hot
+            deconv_q_s_a = tf.reduce_sum(tf.multiply(deconv_q_values, x_actions_one_hot), axis=-1)
+            # shape is batch_sizex20x20
+
+            aux_pixel_loss_not_agg = tf_flatten(deconv_q_s_a - reward_pixel_difference)
+            # not sure if original paper uses mse or mse * 0.5
+            # TODO: not sure if gradients are summed or meaned
+            aux_pixel_loss = tf.reduce_sum(tf.reduce_mean(tf.square(aux_pixel_loss_not_agg), axis=1))
+            aux_pixel_summaries = tf.summary.merge([reward_pixel_diff_summary, deconv_value_summary,
+                                                    deconv_advantage_summary, tf.summary.scalar('aux-pixel-loss', aux_pixel_loss)])
 
         # optimizer
         with tf.name_scope('shared-optimizer'):
@@ -138,6 +191,34 @@ class NStepA3CLSTM(TargetDQN):
                 tf_train_step = optimizer.apply_gradients(clipped_grads_tensors)
                 # tflearn smartly knows how gradients are stored so we just pass in the list of tuples
                 # summarizer.summarize_gradients(clipped_grads_tensors)
+            # TODO: it's unknown whether we keep the same rmsprop vars for auxiliary tasks
+            # we could create another optimizer that stores separate vars for each
+            with tf.name_scope('auxiliary-value-replay-update'):
+                # value replay is in fact just the critic loss, it's questionable whether gradients are
+                # still multiplied by 0.5, but is the most likely scenario so we just reuse that var
+                gradients = optimizer.compute_gradients(critic_loss)
+                # gradients are stored as a tuple, (gradient, tensor the gradient corresponds to)
+                # kinda lame that clip by global norm doesn't accept the list of tuples returned from compute_gradients
+                # so we unzip then zip
+                tensors = [tensor for gradient, tensor in gradients]
+                grads = [gradient for gradient, tensor in gradients]
+                clipped_gradients, _ = tf.clip_by_global_norm(grads, self.global_norm_clipping)  # returns list[tensors], norm
+                clipped_grads_tensors = zip(clipped_gradients, tensors)
+                tf_train_step_auxiliary_value_replay = optimizer.apply_gradients(clipped_grads_tensors)
+            # TODO: it's unknown whether we keep the same rmsprop vars for auxiliary tasks
+            # we could create another optimizer that stores separate vars for each
+            with tf.name_scope('auxiliary-pixel-loss-update'):
+                # value replay is in fact just the critic loss, it's questionable whether gradients are
+                # still multiplied by 0.5, but is the most likely scenario so we just reuse that var
+                gradients = optimizer.compute_gradients(aux_pixel_loss)
+                # gradients are stored as a tuple, (gradient, tensor the gradient corresponds to)
+                # kinda lame that clip by global norm doesn't accept the list of tuples returned from compute_gradients
+                # so we unzip then zip
+                tensors = [tensor for gradient, tensor in gradients]
+                grads = [gradient for gradient, tensor in gradients]
+                clipped_gradients, _ = tf.clip_by_global_norm(grads, self.global_norm_clipping)  # returns list[tensors], norm
+                clipped_grads_tensors = zip(clipped_gradients, tensors)
+                tf_train_step_auxiliary_pixel_loss = optimizer.apply_gradients(clipped_grads_tensors)
 
             # tf learn auto merges all summaries so we just have to grab the last one
             tf_summaries = summarizer.summarize(tf_learning_rate, 'scalar', 'learning-rate')
@@ -183,6 +264,55 @@ class NStepA3CLSTM(TargetDQN):
             else:
                 return sess.run([tf_train_step], feed_dict=feed_dict)
 
+        # value replay
+        def train_auxiliary_value_replay(sess, states, rewards, states_tp1, terminals, lstm_state, task_weight=1, summaries=False):
+            # nstep calculate TD reward
+            if sum(terminals) > 1:
+                raise ValueError('Value replay reward for mutiple terminal states in a batch is undefined')
+
+            # if lstm_state is none set it to zeros, the paper doesn't define if the lstm state is stored or reset
+            if lstm_state is None:
+                lstm_state = (np.zeros((1, 256)), np.zeros((1, 256)))
+
+            # last state not terminal need to query target network
+            curr_reward = 0
+            if not terminals[-1]:
+                # lstm_state should be before the first state, so to get the correct lstm state we need
+                # to pass in states[0] + states_tp1[:] and grab the last one
+                all_states_plus_tp1 = np.concatenate((np.expand_dims(states[0], axis=0), states_tp1), axis=0)
+                target_feed_dict = {x_input_channel_firstdim: all_states_plus_tp1,
+                                    initial_lstm_state: lstm_state}
+                # grab last output, this is estimated reward for state_tp1[-1]
+                curr_reward = sess.run(critic_output, feed_dict=target_feed_dict)[-1]
+
+            # get bootstrap estimate of last state_tp1
+            td_rewards = []
+            for reward in reversed(rewards):
+                curr_reward = reward + self._q_discount * curr_reward
+                td_rewards.append(curr_reward)
+            # td rewards is computed backward but other lists are stored forward so need to reverse
+            td_rewards = list(reversed(td_rewards))
+            feed_dict = {x_input_channel_firstdim: states, x_rewards: td_rewards,
+                         tf_learning_rate: self.current_learning_rate * task_weight, initial_lstm_state: lstm_state}
+            if summaries:
+                return sess.run([value_replay_critic_loss_summary, tf_train_step_auxiliary_value_replay], feed_dict=feed_dict)[0]
+            else:
+                return sess.run([tf_train_step_auxiliary_value_replay], feed_dict=feed_dict)
+
+        # pixel control
+        def train_auxiliary_pixel_control(sess, states, actions, states_tp1, lstm_state, task_weight=0.0007, summaries=False):
+            # if lstm_state is none set it to zeros, the paper doesn't define if the lstm state is stored or reset
+            if lstm_state is None:
+                lstm_state = (np.zeros((1, 256)), np.zeros((1, 256)))
+
+            feed_dict = {x_input_channel_firstdim: states, x_actions: actions,
+                         aux_pc_input_tp1_channel_firstdim: states_tp1,
+                         tf_learning_rate: self.current_learning_rate * task_weight, initial_lstm_state: lstm_state}
+            if summaries:
+                return sess.run([aux_pixel_summaries, tf_train_step_auxiliary_pixel_loss], feed_dict=feed_dict)[0]
+            else:
+                return sess.run([tf_train_step_auxiliary_pixel_loss], feed_dict=feed_dict)
+
         def reset_lstm_state(new_state=None):
             if new_state is not None:
                 self.prev_lstm_state = new_state
@@ -191,11 +321,19 @@ class NStepA3CLSTM(TargetDQN):
 
         self._get_output = get_output
         self._train_step = train_step
+        self._train_auxiliary_value_replay = train_auxiliary_value_replay
+        self._train_auxiliary_pixel_control = train_auxiliary_pixel_control
         self._save_variables = network_trainables
         self.reset_lstm_state = reset_lstm_state
 
     def train_step(self, state, action, reward, state_tp1, terminal, lstm_state=None, global_step=None, summaries=False):
         return self._train_step(self.tf_session, state, action, reward, state_tp1, terminal, lstm_state=lstm_state, global_step=global_step, summaries=summaries)
+
+    def train_auxiliary_value_replay(self, state, reward, state_tp1, terminal, lstm_state=None, summaries=False):
+        return self._train_auxiliary_value_replay(self.tf_session, state, reward, state_tp1, terminal, lstm_state=lstm_state, summaries=summaries)
+
+    def train_auxiliary_pixel_control(self, state, action, state_tp1, lstm_state=None, summaries=False):
+        return self._train_auxiliary_pixel_control(self.tf_session, state, action, state_tp1, lstm_state=lstm_state, summaries=summaries)
 
     def get_lstm_state(self):
         return deepcopy(self.prev_lstm_state)
