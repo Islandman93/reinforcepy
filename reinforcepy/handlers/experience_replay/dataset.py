@@ -91,6 +91,45 @@ actions, and rewards.
         phi[-1] = img
         return phi
 
+    def last_batch(self, batch_size, add_state_tp1_img: np.array=None):
+        """Return the most recent batch of data, with img optionally added to states_tp1"""
+        # if adding an additional frame at the end, make arange inclusive with self.top + 1
+        if add_state_tp1_img is not None:
+            indexes = np.arange(self.top - batch_size - self.phi_length + 1, self.top + 1)
+        else:
+            indexes = np.arange(self.top - batch_size - self.phi_length, self.top + 1)
+
+        # Allocate the response.
+        imgs = np.empty((batch_size,
+                         self.phi_length + 1,
+                         self.height,
+                         self.width),
+                        dtype='uint8')
+        actions = np.empty((batch_size), dtype='int32')
+        rewards = np.empty((batch_size), dtype=floatX)
+        terminals = np.empty((batch_size), dtype=bool)
+
+        # this code is weird below because we are looking 1 into the past if no add_state_tp1_img (ie last state added was terminal)
+        for b in range(batch_size):
+            # last one in batch add in image
+            if b == batch_size - 1 and add_state_tp1_img is not None:
+                tmp_last_sample = np.empty((self.phi_length + 1, self.height, self.width), dtype='uint8')
+                tmp_last_sample[0:self.phi_length] = self.imgs.take(indexes[b:b + self.phi_length], axis=0, mode='wrap')
+                tmp_last_sample[self.phi_length] = add_state_tp1_img
+                imgs[b] = tmp_last_sample
+            else:
+                imgs[b] = self.imgs.take(indexes[b:b + self.phi_length + 1], axis=0, mode='wrap')
+
+            end_index = b + self.phi_length - 1
+            actions[b] = self.actions.take(indexes[end_index], mode='wrap')
+            rewards[b] = self.rewards.take(indexes[end_index], mode='wrap')
+            if add_state_tp1_img is not None:
+                terminals[b] = self.terminal.take(indexes[end_index], mode='wrap')
+            else:
+                terminals[b] = self.terminal.take(indexes[end_index + 1], mode='wrap')
+
+        return imgs[:, 0:-1], actions, rewards, imgs[:, 1:], terminals
+
     def random_batch(self, batch_size):
         """Return corresponding states, actions, rewards, terminal status, and
            next_states for batch_size randomly chosen state transitions.
@@ -137,12 +176,13 @@ actions, and rewards.
 
         return imgs[:, 0:-1], actions, rewards, imgs[:, 1:], terminal
 
-    def random_sequential_batch(self, batch_size):
+    def random_sequential_batch(self, batch_size, max_tries=100):
         """Return corresponding states, actions, rewards, terminal status, and
            next_states for batch_size a random sequential set of state transitions.
 
         """
-        if self.size < batch_size + self.phi_length:
+        all_indices, terminals = self._get_random_sequential_indices(batch_size, max_tries)
+        if all_indices is None:
             return None, None, None, None, None
 
         # if requested size is greater than our size
@@ -155,24 +195,6 @@ actions, and rewards.
         actions = np.empty((batch_size), dtype='int32')
         rewards = np.empty((batch_size), dtype=floatX)
 
-        # find a good starting index that does not have a terminal except at the end
-        good_ind = False
-        # TODO: add in a max tries command, otherwise this could stop processing forever
-        while not good_ind:
-            # Randomly choose a time step from the replay memory.
-            # Since this will be the bottom index it must be batch_size*phi_length from the end
-            # NOTE: randint high is exclusive so we don't need to subtract 1
-            index = self.rng.randint(self.bottom,
-                                     self.bottom + self.size -
-                                     batch_size - self.phi_length)
-
-            all_indices = np.arange(index, index + batch_size + self.phi_length)
-            terminals = self.terminal.take(all_indices, mode='wrap')
-            if np.any(terminals[0:-1]):
-                good_ind = False
-            else:
-                good_ind = True
-
         # found a good start ind create sequential batch
         for b in range(batch_size):
             # NOTE: axis 0 is required here
@@ -182,6 +204,63 @@ actions, and rewards.
             rewards[b] = self.rewards.take(all_indices[end_index], mode='wrap')
 
         return imgs[:, 0:-1], actions, rewards, imgs[:, 1:], terminals[-batch_size:]
+
+    def reward_prioritized_sequential_batch(self, batch_size, reward_probability=0.5, max_tries=100):
+        # check if we should return a reward
+        return_reward = np.random.uniform() < reward_probability
+        if return_reward:
+            all_indices, terminals = self._get_random_sequential_indices(batch_size, max_tries, conditions=lambda x: self.__reward_in_indices(x) == True)
+        else:
+            all_indices, terminals = self._get_random_sequential_indices(batch_size, max_tries, conditions=lambda x: self.__reward_in_indices(x) == False)
+        if all_indices is None:
+            return None, None, None, None, None
+
+        # if requested size is greater than our size
+        # Allocate the response.
+        imgs = np.empty((batch_size,
+                         self.phi_length + 1,
+                         self.height,
+                         self.width),
+                        dtype='uint8')
+        actions = np.empty((batch_size), dtype='int32')
+        rewards = np.empty((batch_size), dtype=floatX)
+        # found a good start ind create sequential batch
+        for b in range(batch_size):
+            # NOTE: axis 0 is required here
+            imgs[b] = self.imgs.take(all_indices[b:b + self.phi_length + 1], axis=0, mode='wrap')
+            end_index = b + self.phi_length - 1
+            actions[b] = self.actions.take(all_indices[end_index], mode='wrap')
+            rewards[b] = self.rewards.take(all_indices[end_index], mode='wrap')
+
+        return imgs[:, 0:-1], actions, rewards, imgs[:, 1:], terminals[-batch_size:]
+
+    def _get_random_sequential_indices(self, batch_size, max_tries, conditions=lambda x: True):
+        """ Finds a set of sequential indices that does not have a terminal except (possibly) at the end
+            Returns None if max_tries reached
+            Else Returns indices, terminals
+        """
+        if self.size < batch_size + self.phi_length:
+            return None, None, None, None, None
+        curr_tries = 0
+        while curr_tries < max_tries:
+            # Randomly choose a time step from the replay memory.
+            # Since this will be the bottom index it must be batch_size*phi_length from the end
+            # NOTE: randint high is exclusive so we don't need to subtract 1
+            index = self.rng.randint(self.bottom,
+                                     self.bottom + self.size -
+                                     batch_size - self.phi_length)
+
+            all_indices = np.arange(index, index + batch_size + self.phi_length)
+            terminals = self.terminal.take(all_indices, mode='wrap')
+            # if no terminals before last one return
+            if not np.any(terminals[0:-1]) and conditions(all_indices):
+                return all_indices, terminals
+            curr_tries += 1
+        # didn't find anything, max_tries reached
+        return None, None
+
+    def __reward_in_indices(self, indices):
+        return np.any(self.rewards.take(indices, mode='wrap'))
 
 
 # TESTING CODE BELOW THIS POINT...
@@ -211,7 +290,7 @@ def simple_tests():
     print('BATCH', dataset.random_batch(1))
 
 
-def speed_tests(sequential=False):
+def speed_tests(case='random'):
 
     dataset = DataSet(width=80, height=80,
                       rng=np.random.RandomState(42),
@@ -219,27 +298,35 @@ def speed_tests(sequential=False):
 
     img = np.random.randint(0, 256, size=(80, 80))
     action = np.random.randint(16)
-    reward = np.random.random()
     start = time.time()
     for i in range(100000):
         terminal = False
+        reward = 0
         if np.random.random() < .05:
             terminal = True
+        if np.random.random() < .05:
+            reward = np.random.uniform(-1, 1)
         dataset.add_sample(img, action, reward, terminal)
     print("samples per second: ", 100000 / (time.time() - start))
 
     start = time.time()
+    successful_runs = 0
     for i in range(2000):
-        if sequential:
-            dataset.random_sequential_batch(32)
+        if case == 'sequential':
+            batch_stuff = dataset.random_sequential_batch(32)
+            if batch_stuff[0] is not None:
+                successful_runs += 1
+        elif case == 'reward_prioritized':
+            batch_stuff = dataset.reward_prioritized_sequential_batch(3)
+            if batch_stuff[0] is not None:
+                successful_runs += 1
         else:
             dataset.random_batch(32)
-    print("batches per second: ", 2000 / (time.time() - start))
-    # print(a)
+            successful_runs += 1
+    print("batches per second: {}. Unsuccessful runs: {}".format(successful_runs / (time.time() - start), 2000 - successful_runs))
 
 
 def trivial_tests():
-
     dataset = DataSet(width=2, height=1,
                       rng=np.random.RandomState(42),
                       max_steps=3, phi_length=2)
@@ -257,11 +344,11 @@ def trivial_tests():
 
 def max_size_tests():
     dataset1 = DataSet(width=3, height=4,
-                      rng=np.random.RandomState(42),
-                      max_steps=10, phi_length=4)
+                       rng=np.random.RandomState(42),
+                       max_steps=10, phi_length=4)
     dataset2 = DataSet(width=3, height=4,
-                      rng=np.random.RandomState(42),
-                      max_steps=1000, phi_length=4)
+                       rng=np.random.RandomState(42),
+                       max_steps=1000, phi_length=4)
     for i in range(100):
         img = np.random.randint(0, 256, size=(4, 3))
         action = np.random.randint(16)
@@ -307,9 +394,11 @@ def test_random_sequential_batch():
 
 def main():
     print('non sequential')
-    speed_tests(False)
+    speed_tests()
     print('sequential')
-    speed_tests(True)
+    speed_tests('sequential')
+    print('reward_prioritized')
+    speed_tests('reward_prioritized')
     # test_memory_usage_ok()
     # max_size_tests()
     # simple_tests()

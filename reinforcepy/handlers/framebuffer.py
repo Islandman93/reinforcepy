@@ -46,7 +46,7 @@ class FrameBuffer:
             State from environment
         """
         # create a copy and fill it with current buffer plus state
-        buffer_with = np.zeros(self.shape, dtype=self.dtype)
+        buffer_with = np.empty(self.shape, dtype=self.dtype)
         buffer_with[0, 0:self.length - 1] = self.frame_buffer[0, 1:self.length]
         buffer_with[0, self.length - 1] = state
         return buffer_with
@@ -61,7 +61,7 @@ class FrameBuffer:
         """
         Returns a copy of the current buffer
         """
-        return np.copy(self.frame_buffer)
+        return self.frame_buffer.copy()
 
     def set_buffer(self, frame_buffer):
         """

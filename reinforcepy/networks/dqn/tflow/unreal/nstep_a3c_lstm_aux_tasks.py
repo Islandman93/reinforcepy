@@ -39,8 +39,10 @@ def create_a3c_lstm_network(input_tensor, output_num):
 
 class NStepA3CLSTMUNREAL(TargetDQN):
     def __init__(self, input_shape, output_num, optimizer=None, network_generator=create_a3c_lstm_network, q_discount=0.99,
-                 entropy_regularization=0.01, global_norm_clipping=40, initial_learning_rate=0.001, learning_rate_decay=None):
+                 auxiliary_q_discount=0.9, entropy_regularization=0.01, global_norm_clipping=40, initial_learning_rate=0.001,
+                 learning_rate_decay=None):
         self._entropy_regularization = entropy_regularization
+        self.aux_q_discount = auxiliary_q_discount
         self.prev_lstm_state = None
         super().__init__(input_shape, output_num, None, optimizer=optimizer, network_generator=network_generator,
                          q_discount=q_discount, loss_clipping=None, global_norm_clipping=global_norm_clipping,
@@ -110,7 +112,7 @@ class NStepA3CLSTMUNREAL(TargetDQN):
                 summarizer.summarize(actor_loss, 'scalar', 'actor-loss')
 
             with tf.name_scope('critic-loss'):
-                critic_loss = tf.nn.l2_loss(critic_diff)
+                critic_loss = tf.nn.l2_loss(critic_diff) * 0.5
                 summarizer.summarize(critic_loss, 'scalar', 'critic-loss')
                 value_replay_critic_loss_summary = tf.summary.scalar('value-replay-critic-loss', critic_loss)
 
@@ -140,15 +142,14 @@ class NStepA3CLSTMUNREAL(TargetDQN):
             reward_pixel_diff_summary = tf.summary.image('pixel-difference', tf.expand_dims(reward_pixel_difference, axis=-1))
 
             # create aux deconv net
-            # first map lstm output batchsizex256 -> 7x7x32 = 1568
-            deconv_linear = tflearn.fully_connected(lstm_output, 1568, activation='relu')
-            deconv_linear = tf.reshape(deconv_linear, (-1, 7, 7, 32))  # since this layer is learned it doesn't matter how we reshape
-            # original paper doesn't use tensorflow I guess, deconv of 4x4 filter doesn't result in the right shape
-            # 7x7 * 2 = 14x14 + 4 == 18x18, 8x8 * 2 = 16x16 + 4 = 20x20 so we pad with 1 set of zeros
-            # TODO: figure out why these are different, or just make the fully connected output 8x8x32
-            # deconv_linear = tf.pad(deconv_linear, [[0, 0], [1, 0], [1, 0], [0, 0]])
-            deconv_value = tflearn.conv_2d_transpose(deconv_linear, 1, 4, [20, 20], strides=1, padding='valid')
-            deconv_advantage = tflearn.conv_2d_transpose(deconv_linear, output_num, 4, [20, 20], strides=1, padding='valid')
+            # the paper says 7x7 but that doesn't work in tensorflow, to get a deconv of 20x20 I think you actually need 9x9
+            # also the inverse of l_hid2 would be from 9x9->20x20 so this makes more sense
+            # first map lstm output batchsizex256 -> 9x9x32 = 2592
+            deconv_linear = tflearn.fully_connected(lstm_output, 2592, activation='relu')
+            deconv_linear = tf.reshape(deconv_linear, (-1, 9, 9, 32))  # since this layer is learned it doesn't matter how we reshape
+
+            deconv_value = tflearn.conv_2d_transpose(deconv_linear, 1, 4, [20, 20], strides=2, padding='valid')
+            deconv_advantage = tflearn.conv_2d_transpose(deconv_linear, output_num, 4, [20, 20], strides=2, padding='valid')
 
             deconv_value_summary = tf.summary.image('deconv-value', deconv_value)
             for i in range(output_num):
@@ -167,10 +168,14 @@ class NStepA3CLSTMUNREAL(TargetDQN):
             deconv_q_s_a = tf.reduce_sum(tf.multiply(deconv_q_values, x_actions_one_hot), axis=-1)
             # shape is batch_sizex20x20
 
-            aux_pixel_loss_not_agg = tf_flatten(deconv_q_s_a - reward_pixel_difference)
+            # the paper optimizes each control task with an n-step Q-learning loss, does this apply to pixel control? if so the relation is confusing
+            # R_t:t+n + G^n (max(Q(s_tp1)) - Q(s, a))^2
+            # TODO: this is actually only a 1 step reward scheme
+            aux_pixel_loss_not_agg = tf_flatten(reward_pixel_difference - deconv_q_s_a)
             # not sure if original paper uses mse or mse * 0.5
             # TODO: not sure if gradients are summed or meaned
-            aux_pixel_loss = tf.reduce_sum(tf.reduce_mean(tf.square(aux_pixel_loss_not_agg), axis=1))
+            aux_pixel_loss_weight_placeholder = tf.placeholder(tf.float32)
+            aux_pixel_loss = tf.reduce_sum(tf.reduce_mean(tf.square(aux_pixel_loss_not_agg), axis=1)) * aux_pixel_loss_weight_placeholder
             aux_pixel_summaries = tf.summary.merge([reward_pixel_diff_summary, deconv_value_summary,
                                                     deconv_advantage_summary, tf.summary.scalar('aux-pixel-loss', aux_pixel_loss)])
 
@@ -222,6 +227,7 @@ class NStepA3CLSTMUNREAL(TargetDQN):
 
             # tf learn auto merges all summaries so we just have to grab the last one
             tf_summaries = summarizer.summarize(tf_learning_rate, 'scalar', 'learning-rate')
+            auxiliary_summaries = tf.summary.merge([aux_pixel_summaries, value_replay_critic_loss_summary])
 
         # function to get network output
         def get_output(sess, state):
@@ -288,7 +294,7 @@ class NStepA3CLSTMUNREAL(TargetDQN):
             # get bootstrap estimate of last state_tp1
             td_rewards = []
             for reward in reversed(rewards):
-                curr_reward = reward + self._q_discount * curr_reward
+                curr_reward = reward + self.aux_q_discount * curr_reward
                 td_rewards.append(curr_reward)
             # td rewards is computed backward but other lists are stored forward so need to reverse
             td_rewards = list(reversed(td_rewards))
@@ -313,6 +319,42 @@ class NStepA3CLSTMUNREAL(TargetDQN):
             else:
                 return sess.run([tf_train_step_auxiliary_pixel_loss], feed_dict=feed_dict)
 
+        def train_auxiliary_vr_pc(sess, states, actions, rewards, states_tp1, terminals, lstm_state, pixel_control_weight=0.0007, summaries=False):
+            # nstep calculate TD reward
+            if sum(terminals) > 1:
+                raise ValueError('Value replay reward for mutiple terminal states in a batch is undefined')
+
+            # if lstm_state is none set it to zeros, the paper doesn't define if the lstm state is stored or reset
+            if lstm_state is None:
+                lstm_state = (np.zeros((1, 256)), np.zeros((1, 256)))
+
+            # last state not terminal need to query target network
+            curr_reward = 0
+            if not terminals[-1]:
+                # lstm_state should be before the first state, so to get the correct lstm state we need
+                # to pass in states[0] + states_tp1[:] and grab the last one
+                all_states_plus_tp1 = np.concatenate((np.expand_dims(states[0], axis=0), states_tp1), axis=0)
+                target_feed_dict = {x_input_channel_firstdim: all_states_plus_tp1,
+                                    initial_lstm_state: lstm_state}
+                # grab last output, this is estimated reward for state_tp1[-1]
+                curr_reward = sess.run(critic_output, feed_dict=target_feed_dict)[-1]
+
+            # get bootstrap estimate of last state_tp1
+            td_rewards = []
+            for reward in reversed(rewards):
+                curr_reward = reward + self.aux_q_discount * curr_reward
+                td_rewards.append(curr_reward)
+            # td rewards is computed backward but other lists are stored forward so need to reverse
+            td_rewards = list(reversed(td_rewards))
+
+            feed_dict = {x_input_channel_firstdim: states, x_actions: actions, x_rewards: td_rewards,
+                         aux_pc_input_tp1_channel_firstdim: states_tp1, aux_pixel_loss_weight_placeholder: pixel_control_weight,
+                         tf_learning_rate: self.current_learning_rate, initial_lstm_state: lstm_state}
+            if summaries:
+                return sess.run([auxiliary_summaries, tf_train_step_auxiliary_value_replay, tf_train_step_auxiliary_pixel_loss], feed_dict=feed_dict)[0]
+            else:
+                return sess.run([tf_train_step_auxiliary_value_replay, tf_train_step_auxiliary_pixel_loss], feed_dict=feed_dict)
+
         def reset_lstm_state(new_state=None):
             if new_state is not None:
                 self.prev_lstm_state = new_state
@@ -323,6 +365,7 @@ class NStepA3CLSTMUNREAL(TargetDQN):
         self._train_step = train_step
         self._train_auxiliary_value_replay = train_auxiliary_value_replay
         self._train_auxiliary_pixel_control = train_auxiliary_pixel_control
+        self._train_all_auxiliary = train_auxiliary_vr_pc
         self._save_variables = network_trainables
         self.reset_lstm_state = reset_lstm_state
 
@@ -334,6 +377,11 @@ class NStepA3CLSTMUNREAL(TargetDQN):
 
     def train_auxiliary_pixel_control(self, state, action, state_tp1, lstm_state=None, summaries=False):
         return self._train_auxiliary_pixel_control(self.tf_session, state, action, state_tp1, lstm_state=lstm_state, summaries=summaries)
+
+    def train_auxiliary_vr_pc(self, state, action, reward, state_tp1, terminal, lstm_state=None, summaries=False):
+        # Much faster than training individually, just one gpu copy then free GIL
+        # this uses the same data for value replay and pixel control but that shouldn't be a problem
+        return self._train_all_auxiliary(self.tf_session, state, action, reward, state_tp1, terminal, lstm_state=lstm_state, summaries=summaries)
 
     def get_lstm_state(self):
         return deepcopy(self.prev_lstm_state)
