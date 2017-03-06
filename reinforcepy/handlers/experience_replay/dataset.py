@@ -392,6 +392,14 @@ def test_random_sequential_batch():
     print(dataset.random_sequential_batch(3))
 
 
+def test_last_batch():
+    dataset = DataSet(width=2, height=2,
+                      max_steps=10, phi_length=4)
+    for i in range(20):
+        dataset.add_sample(np.asarray([[i, i], [i*10, i*10]]), i, i, (i+1) % 10 == 0)
+    print(dataset.last_batch(5))
+
+
 def main():
     print('non sequential')
     speed_tests()
@@ -399,6 +407,8 @@ def main():
     speed_tests('sequential')
     print('reward_prioritized')
     speed_tests('reward_prioritized')
+    print('last batch')
+    test_last_batch()
     # test_memory_usage_ok()
     # max_size_tests()
     # simple_tests()

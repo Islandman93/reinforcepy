@@ -4,6 +4,14 @@ from .base_thread_learner import BaseThreadLearner
 
 
 class QThreadLearner(BaseThreadLearner, BaseQLearner):
+    def __init__(self, *args, **kwargs):
+        self.steps_since_train = 0
+        super().__init__(*args, **kwargs)
+
+    def reset(self):
+        super().reset()
+        self.steps_since_train = 0
+
     def update(self, state, action, reward, state_tp1, terminal):
         self.frame_buffer.add_state_to_buffer(state)
 
@@ -21,10 +29,11 @@ class QThreadLearner(BaseThreadLearner, BaseQLearner):
 
         # increment counters
         self.step_count += 1
+        self.steps_since_train += 1
         self.global_dict['counter'] += 1
 
         # check perform gradient step
-        if self.step_count % self.async_update_step == 0 or terminal:
+        if self.steps_since_train % self.async_update_step == 0 or terminal:
             summaries = self.global_dict['write_summaries_this_step']
             if summaries:
                 self.global_dict['write_summaries_this_step'] = False
@@ -33,6 +42,7 @@ class QThreadLearner(BaseThreadLearner, BaseQLearner):
             else:
                 self.network.train_step(*self.get_minibatch_vars(), global_step=self.global_dict['counter'], summaries=False)
             self.reset_minibatch()
+            self.steps_since_train = 0
 
         # anneal action handler
         self.anneal_random_policy()

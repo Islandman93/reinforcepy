@@ -20,6 +20,9 @@ class AuxiliaryThreadLearner(QThreadLearner):
         self.lstm_state_for_training = self.network.get_lstm_state()
         self.steps_since_train = 0
 
+    def get_action(self, state):
+        return self.network.get_output(np.expand_dims(self.dataset.phi(state), 0))
+
     def update(self, state, action, reward, state_tp1, terminal):
         # clip reward
         if self.reward_clip_vals is not None:
@@ -49,23 +52,24 @@ class AuxiliaryThreadLearner(QThreadLearner):
                 self.global_dict['write_summaries_this_step'] = False
                 summary = self.network.train_step(*last_batch, lstm_state=self.lstm_state_for_training,
                                                   global_step=self.global_dict['counter'], summaries=True)
+                # summary = self.network.train_step(*last_batch, global_step=self.global_dict['counter'], summaries=True)
                 self.global_dict['summary_writer'].add_summary(summary, global_step=self.global_dict['counter'])
             else:
                 self.network.train_step(*last_batch, lstm_state=self.lstm_state_for_training,
                                         global_step=self.global_dict['counter'], summaries=False)
+                # self.network.train_step(*last_batch, global_step=self.global_dict['counter'], summaries=False)
 
-            # auxiliary tasks
+            # # auxiliary tasks
             states, actions, rewards, state_tp1s, terminals = self.dataset.random_sequential_batch(self.batch_size)
             # sequential batch can return none if there isn't a sequential batch of requested size
             if states is not None:
                 if summaries:
-                    summary = self.network.train_auxiliary_vr_pc(states, actions, rewards, state_tp1s, terminals, summaries=True)
+                    summary = self.network.train_auxiliary_value_replay(states, rewards, state_tp1s, terminals, summaries=True)
+                    # summary = self.network.train_auxiliary_vr_pc(states, actions, rewards, state_tp1s, terminals, summaries=True)
                     self.global_dict['summary_writer'].add_summary(summary, global_step=self.global_dict['counter'])
                 else:
-                    summary = self.network.train_auxiliary_vr_pc(states, actions, rewards, state_tp1s, terminals, summaries=False)
+                    # self.network.train_auxiliary_vr_pc(states, actions, rewards, state_tp1s, terminals, summaries=False)
+                    self.network.train_auxiliary_value_replay(states, rewards, state_tp1s, terminals, summaries=False)
 
             self.steps_since_train = 0
             self.lstm_state_for_training = self.network.get_lstm_state()
-
-        # anneal action handler
-        self.anneal_random_policy()

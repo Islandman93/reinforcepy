@@ -7,7 +7,7 @@ import tflearn.helpers.summarizer as summarizer
 from ..target_dqn import TargetDQN
 
 
-def create_a3c_lstm_network(input_tensor, output_num):
+def create_a3c_lstm_network(input_tensor, output_num, initial_lstm_state=None):
     l_hid1 = tflearn.conv_2d(input_tensor, 16, 8, strides=4, activation='relu', scope='conv1', padding='valid')
     l_hid2 = tflearn.conv_2d(l_hid1, 32, 4, strides=2, activation='relu', scope='conv2', padding='valid')
     l_hid3 = tflearn.fully_connected(l_hid2, 256, activation='relu', scope='dense3')
@@ -20,9 +20,10 @@ def create_a3c_lstm_network(input_tensor, output_num):
     # BasicLSTMCell lists state size as tuple so we need to pass tuple into dynamic_rnn
     lstm_state_size = tuple([[1, x] for x in l_lstm.state_size])
     # has to specifically be the same type tf.python.ops.rnn_cell.LSTMStateTuple
-    from tensorflow.contrib.rnn.python.ops import core_rnn_cell
-    initial_lstm_state = core_rnn_cell.LSTMStateTuple(tf.placeholder(tf.float32, shape=lstm_state_size[0], name='initial_lstm_state1'),
-                                                      tf.placeholder(tf.float32, shape=lstm_state_size[1], name='initial_lstm_state2'))
+    if initial_lstm_state is None:
+        from tensorflow.contrib.rnn.python.ops import core_rnn_cell
+        initial_lstm_state = core_rnn_cell.LSTMStateTuple(tf.placeholder(tf.float32, shape=lstm_state_size[0], name='initial_lstm_state1'),
+                                                          tf.placeholder(tf.float32, shape=lstm_state_size[1], name='initial_lstm_state2'))
     # dynamically get the sequence length
     sequence_length = tf.reshape(tf.shape(l_hid3)[0], [1])
     l_lstm4, new_lstm_state = tf.nn.dynamic_rnn(l_lstm, l_hid3_reshape,
@@ -39,7 +40,7 @@ def create_a3c_lstm_network(input_tensor, output_num):
 
 class NStepA3CLSTMUNREAL(TargetDQN):
     def __init__(self, input_shape, output_num, optimizer=None, network_generator=create_a3c_lstm_network, q_discount=0.99,
-                 auxiliary_q_discount=0.9, entropy_regularization=0.01, global_norm_clipping=40, initial_learning_rate=0.001,
+                 auxiliary_q_discount=0.99, entropy_regularization=0.01, global_norm_clipping=40.0, initial_learning_rate=0.001,
                  learning_rate_decay=None):
         self._entropy_regularization = entropy_regularization
         self.aux_q_discount = auxiliary_q_discount
@@ -71,19 +72,19 @@ class NStepA3CLSTMUNREAL(TargetDQN):
             critic_output = tf.reshape(critic_output, [-1])
 
             # # summarize a histogram of each action output
-            # for output_ind in range(output_num):
-            #     summarizer.summarize(actor_output[:, output_ind], 'histogram', 'network-actor-output/{0}'.format(output_ind))
-            # # summarize critic output
-            # summarizer.summarize(tf.reduce_mean(critic_output), 'scalar', 'network-critic-output')
+            for output_ind in range(output_num):
+                summarizer.summarize(actor_output[:, output_ind], 'histogram', 'network-actor-output/{0}'.format(output_ind))
+            # summarize critic output
+            summarizer.summarize(tf.reduce_mean(critic_output), 'scalar', 'network-critic-output')
 
-            # # get the trainable variables for this network, later used to overwrite target network vars
+            # get the trainable variables for this network, later used to overwrite target network vars
             network_trainables = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope='network')
 
             # # summarize activations
-            # summarizer.summarize_activations(tf.get_collection(tf.GraphKeys.ACTIVATIONS, scope='network'))
+            summarizer.summarize_activations(tf.get_collection(tf.GraphKeys.ACTIVATIONS, scope='network'))
 
             # # add network summaries
-            # summarizer.summarize_variables(train_vars=network_trainables)
+            summarizer.summarize_variables(train_vars=network_trainables)
 
         # caculate losses
         with tf.name_scope('loss'):
@@ -112,7 +113,7 @@ class NStepA3CLSTMUNREAL(TargetDQN):
                 summarizer.summarize(actor_loss, 'scalar', 'actor-loss')
 
             with tf.name_scope('critic-loss'):
-                critic_loss = tf.nn.l2_loss(critic_diff) * 0.5
+                critic_loss = tf.nn.l2_loss(critic_diff)
                 summarizer.summarize(critic_loss, 'scalar', 'critic-loss')
                 value_replay_critic_loss_summary = tf.summary.scalar('value-replay-critic-loss', critic_loss)
 
@@ -210,20 +211,20 @@ class NStepA3CLSTMUNREAL(TargetDQN):
                 clipped_gradients, _ = tf.clip_by_global_norm(grads, self.global_norm_clipping)  # returns list[tensors], norm
                 clipped_grads_tensors = zip(clipped_gradients, tensors)
                 tf_train_step_auxiliary_value_replay = optimizer.apply_gradients(clipped_grads_tensors)
-            # TODO: it's unknown whether we keep the same rmsprop vars for auxiliary tasks
-            # we could create another optimizer that stores separate vars for each
-            with tf.name_scope('auxiliary-pixel-loss-update'):
-                # value replay is in fact just the critic loss, it's questionable whether gradients are
-                # still multiplied by 0.5, but is the most likely scenario so we just reuse that var
-                gradients = optimizer.compute_gradients(aux_pixel_loss)
-                # gradients are stored as a tuple, (gradient, tensor the gradient corresponds to)
-                # kinda lame that clip by global norm doesn't accept the list of tuples returned from compute_gradients
-                # so we unzip then zip
-                tensors = [tensor for gradient, tensor in gradients]
-                grads = [gradient for gradient, tensor in gradients]
-                clipped_gradients, _ = tf.clip_by_global_norm(grads, self.global_norm_clipping)  # returns list[tensors], norm
-                clipped_grads_tensors = zip(clipped_gradients, tensors)
-                tf_train_step_auxiliary_pixel_loss = optimizer.apply_gradients(clipped_grads_tensors)
+            # # TODO: it's unknown whether we keep the same rmsprop vars for auxiliary tasks
+            # # we could create another optimizer that stores separate vars for each
+            # with tf.name_scope('auxiliary-pixel-loss-update'):
+            #     # value replay is in fact just the critic loss, it's questionable whether gradients are
+            #     # still multiplied by 0.5, but is the most likely scenario so we just reuse that var
+            #     gradients = optimizer.compute_gradients(aux_pixel_loss)
+            #     # gradients are stored as a tuple, (gradient, tensor the gradient corresponds to)
+            #     # kinda lame that clip by global norm doesn't accept the list of tuples returned from compute_gradients
+            #     # so we unzip then zip
+            #     tensors = [tensor for gradient, tensor in gradients]
+            #     grads = [gradient for gradient, tensor in gradients]
+            #     clipped_gradients, _ = tf.clip_by_global_norm(grads, self.global_norm_clipping)  # returns list[tensors], norm
+            #     clipped_grads_tensors = zip(clipped_gradients, tensors)
+            #     tf_train_step_auxiliary_pixel_loss = optimizer.apply_gradients(clipped_grads_tensors)
 
             # tf learn auto merges all summaries so we just have to grab the last one
             tf_summaries = summarizer.summarize(tf_learning_rate, 'scalar', 'learning-rate')
