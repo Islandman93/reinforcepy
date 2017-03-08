@@ -40,7 +40,7 @@ class ALEEnvironment(BaseEnvironment):
         width, height = self.ale.getScreenDims()
         channels = 1 if grayscale else 3
         self.grayscale = grayscale
-        self.gamescreen = np.empty((height, width, 1), dtype=np.uint8)
+        self.gamescreen = np.empty((height, width, channels), dtype=np.uint8)
 
         self.resize_shape = resize_shape
         self.skip_frame = skip_frame

@@ -1,7 +1,5 @@
-from functools import partial
 import numpy as np
 import tensorflow as tf
-import tflearn
 import tflearn.helpers.summarizer as summarizer
 import reinforcepy.networks.util.tflow_util as tf_util
 from .target_dqn import TargetDQN
@@ -10,12 +8,12 @@ from .target_dqn import TargetDQN
 class NStepA3C(TargetDQN):
     def __init__(self, input_shape, output_num, optimizer=None, network_generator=tf_util.create_a3c_network, q_discount=0.99,
                  entropy_regularization=0.01, global_norm_clipping=40, initial_learning_rate=0.001, learning_rate_decay=None,
-                 deterministic=False):
+                 deterministic=False, **kwargs):
         self._entropy_regularization = entropy_regularization
         self.deterministic = deterministic
         super().__init__(input_shape, output_num, None, optimizer=optimizer, network_generator=network_generator,
                          q_discount=q_discount, loss_clipping=None, global_norm_clipping=global_norm_clipping,
-                         initial_learning_rate=initial_learning_rate, learning_rate_decay=learning_rate_decay)
+                         initial_learning_rate=initial_learning_rate, learning_rate_decay=learning_rate_decay, **kwargs)
 
     def create_network_graph(self):
         input_shape = self._input_shape
@@ -27,16 +25,21 @@ class NStepA3C(TargetDQN):
             x_input_channel_firstdim = tf.placeholder(tf.uint8, [None] + input_shape, name='x-input')
             # transpose because tf wants channels on last dim and channels are passed in on 2nd dim
             x_input = tf.cast(tf.transpose(x_input_channel_firstdim, perm=[0, 2, 3, 1]), tf.float32) / 255.0
-            # transpose because tf wants channels on last dim and channels are passed in on 2nd dim
+            x_input_tp1_channel_firstdim = tf.placeholder(tf.uint8, [None] + input_shape, name='x-input-tp1')
+            x_input_tp1 = tf.cast(tf.transpose(x_input_tp1_channel_firstdim, perm=[0, 2, 3, 1]), tf.float32) / 255.0
             x_actions = tf.placeholder(tf.int32, shape=[None], name='x-actions')
             x_rewards = tf.placeholder(tf.float32, shape=[None], name='x-rewards')
+            x_last_state_terminal = tf.placeholder(tf.bool, name='x-last-state-terminal')
 
-        with tf.variable_scope('network'):
+        with tf.variable_scope('network') as var_scope:
             actor_output, critic_output = self._network_generator(x_input, output_num)
             # flatten the critic_output NOTE: THIS IS VERY IMPORTANT
             # otherwise critic_output will be (batch_size, 1) and all ops with it and x_rewards will create a
             # tensor of shape (batch_size, batch_size)
             critic_output = tf.reshape(critic_output, [-1])
+
+            var_scope.reuse_variables()
+            _, critic_output_tp1 = self._network_generator(x_input_tp1, output_num)
 
             # # summarize a histogram of each action output
             # for output_ind in range(output_num):
@@ -53,10 +56,14 @@ class NStepA3C(TargetDQN):
             # # add network summaries
             # summarizer.summarize_variables(train_vars=network_trainables)
 
+        with tf.name_scope('nstep_reward'):
+            estimated_reward = tf.cond(x_last_state_terminal, lambda: tf.constant([0.0]), lambda: critic_output_tp1[-1])
+            tf_nstep_rewards = tf_util.nstep_rewards_nd(x_rewards, estimated_reward, self._q_discount)
+
         # caclulate losses
         with tf.name_scope('loss'):
             with tf.name_scope('critic-reward-diff'):
-                critic_diff = tf.subtract(critic_output, x_rewards)
+                critic_diff = tf.subtract(critic_output, tf_nstep_rewards)
 
             with tf.name_scope('log-of-actor-policy'):
                 # Because of https://github.com/tensorflow/tensorflow/issues/206
@@ -129,20 +136,8 @@ class NStepA3C(TargetDQN):
             if sum(terminals) > 1:
                 raise ValueError('TD reward for mutiple terminal states in a batch is undefined')
 
-            # last state not terminal need to query target network
-            curr_reward = 0
-            if not terminals[-1]:
-                target_feed_dict = {x_input_channel_firstdim: [states_tp1[-1]]}  # make a list to add back the first dim (needs to be 4 dims)
-                curr_reward = max(sess.run(critic_output, feed_dict=target_feed_dict))
-
-            # get bootstrap estimate of last state_tp1
-            td_rewards = []
-            for reward in reversed(rewards):
-                curr_reward = reward + self._q_discount * curr_reward
-                td_rewards.append(curr_reward)
-            # td rewards is computed backward but other lists are stored forward so need to reverse
-            td_rewards = list(reversed(td_rewards))
-            feed_dict = {x_input_channel_firstdim: states, x_actions: actions, x_rewards: td_rewards,
+            feed_dict = {x_input_channel_firstdim: states, x_actions: actions, x_rewards: rewards,
+                         x_input_tp1_channel_firstdim: [states_tp1[-1]], x_last_state_terminal: terminals[-1],
                          tf_learning_rate: self.current_learning_rate}
 
             if summaries:
