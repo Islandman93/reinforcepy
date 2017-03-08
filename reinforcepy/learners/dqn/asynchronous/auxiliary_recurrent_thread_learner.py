@@ -3,23 +3,29 @@ from .q_thread_learner import QThreadLearner
 from reinforcepy.handlers.experience_replay import DataSet
 
 
-class AuxiliaryThreadLearner(QThreadLearner):
+class AuxiliaryRecurrentThreadLearner(QThreadLearner):
     def __init__(self, environment, network, global_dict, dataset_size, batch_size, reward_pred_batch_size, **kwargs):
         super().__init__(environment, network, global_dict, **kwargs)
         env_shape = environment.get_state_shape()
         self.batch_size = batch_size
         self.reward_pred_batch_size = reward_pred_batch_size
         self.dataset = DataSet(env_shape[0], env_shape[1], max_steps=dataset_size, phi_length=self.phi_length)
+        self.current_lstm_state = self.network.blank_lstm_state()
+        self.lstm_state_for_training = self.network.blank_lstm_state()
         self.steps_since_train = 0
 
     def reset(self):
         state = self.environment.get_state()
         for _ in range(self.phi_length + 1):
             self.dataset.add_sample(state, 0, 0, False)
+        self.current_lstm_state = self.network.blank_lstm_state()
+        self.lstm_state_for_training = self.network.blank_lstm_state()
         self.steps_since_train = 0
 
     def get_action(self, state):
-        return self.network.get_output(np.expand_dims(self.dataset.phi(state), 0))
+        action, lstm_state = self.network.get_output(np.expand_dims(self.dataset.phi(state), 0), self.current_lstm_state)
+        self.current_lstm_state = lstm_state
+        return action
 
     def update(self, state, action, reward, state_tp1, terminal):
         # clip reward
@@ -48,10 +54,12 @@ class AuxiliaryThreadLearner(QThreadLearner):
                 last_batch = self.dataset.last_batch(self.steps_since_train)
             if summaries:
                 self.global_dict['write_summaries_this_step'] = False
-                summary = self.network.train_step(*last_batch, global_step=self.global_dict['counter'], summaries=True)
+                summary = self.network.train_step(*last_batch, lstm_state=self.lstm_state_for_training,
+                                                  global_step=self.global_dict['counter'], summaries=True)
                 self.global_dict['summary_writer'].add_summary(summary, global_step=self.global_dict['counter'])
             else:
-                self.network.train_step(*last_batch, global_step=self.global_dict['counter'], summaries=False)
+                self.network.train_step(*last_batch, lstm_state=self.lstm_state_for_training,
+                                        global_step=self.global_dict['counter'], summaries=False)
 
             # auxiliary tasks
             # pixel control
@@ -85,3 +93,4 @@ class AuxiliaryThreadLearner(QThreadLearner):
                     self.network.train_auxiliary_reward_preditiction(states, rewards, summaries=False)
 
             self.steps_since_train = 0
+            self.lstm_state_for_training = self.current_lstm_state

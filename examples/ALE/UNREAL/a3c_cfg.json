@@ -13,7 +13,8 @@
     "reward_clip_vals" : [-1, 1],
     "random_policy": false,
     "dataset_size": 2000,
-    "batch_size": 20
+    "batch_size": 20,
+    "reward_pred_batch_size": 3
   },
   "network_args": {
     "q_discount": 0.99,

@@ -3,6 +3,7 @@ import json
 import datetime
 from reinforcepy.environments import ALEEnvironment
 from reinforcepy.networks.dqn.tflow.target_dqn import TargetDQN
+import reinforcepy.networks.util.tflow_util as tf_util
 from reinforcepy.learners.dqn.asynchronous.q_thread_learner import QThreadLearner
 from reinforcepy.learners.dqn.asynchronous.async_thread_host import AsyncThreadHost
 
@@ -14,7 +15,12 @@ def main(rom_args, learner_args, network_args, algorithm_type, num_threads, epoc
     # create shared network
     num_actions = environments[0].get_num_actions()
     input_shape = [learner_args['phi_length']] + environments[0].get_state_shape()
-    network = TargetDQN(input_shape, num_actions, algorithm_type, **network_args)
+
+    # dueling we have to specify a different network generator for value and advantage output
+    if 'dueling' in algorithm_type:
+        network = TargetDQN(input_shape, num_actions, algorithm_type, network_generator=tf_util.create_dueling_nips_network, **network_args)
+    else:
+        network = TargetDQN(input_shape, num_actions, algorithm_type, **network_args)
 
     # create thread host
     thread_host = AsyncThreadHost(network, log_dir=logdir)
@@ -34,8 +40,9 @@ def main(rom_args, learner_args, network_args, algorithm_type, num_threads, epoc
 if __name__ == '__main__':
     run_type = 'dqn'
     if len(sys.argv) >= 2:
-        if sys.argv[1] not in ['dqn', 'double', 'nstep', 'doublenstep']:
-            raise ValueError('The algorithm type must be passed as a parameter and must be either dqn, double, or nstep')
+        algorithm_types = ['dqn', 'double', 'dueling', 'nstep', 'doublenstep', 'duelingnstep']
+        if sys.argv[1] not in algorithm_types:
+            raise ValueError('The algorithm type must be passed as a parameter and must be in {}'.format(algorithm_types))
         run_type = sys.argv[1]
 
     CONFIG = json.load(open('dqn_cfg.json'))

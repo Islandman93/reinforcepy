@@ -11,10 +11,11 @@ from ..base_network import BaseNetwork
 class TargetDQN(BaseNetwork):
     """
         Parameters:
-            algorithm_type: str one of 'dqn', 'double', 'nstep', 'doublenstep'
+            algorithm_type: str one of 'dqn', 'double', 'dueling', 'nstep', 'doublenstep', 'duelingnstep'
+                For dueling architectures the network_generator must return Value, Advantage outputs
     """
     def __init__(self, input_shape, output_num, algorithm_type, optimizer=None, network_generator=tf_util.create_nips_network, q_discount=0.99, loss_clipping=1,
-                 global_norm_clipping=40, initial_learning_rate=0.001, learning_rate_decay=None, target_network_update_steps=10000):
+                 global_norm_clipping=40, initial_learning_rate=0.001, learning_rate_decay=None, target_network_update_steps=10000, **kwargs):
         # setup vars needed for create_network_graph
         # if optimizer is none use default rms prop
         if optimizer is None:
@@ -36,7 +37,7 @@ class TargetDQN(BaseNetwork):
         self._target_network_next_update_step = 0
 
         # super calls create_network_graph
-        super().__init__(input_shape, output_num)
+        super().__init__(input_shape, output_num, **kwargs)
 
     def create_network_graph(self):
         input_shape = self._input_shape
@@ -58,7 +59,12 @@ class TargetDQN(BaseNetwork):
 
         # Target network does not reuse variables
         with tf.variable_scope('network') as var_scope:
-            self._t_network_output = self._network_generator(self._t_x_input, output_num)
+            if 'dueling' not in self.algorithm_type:
+                self._t_network_output = self._network_generator(self._t_x_input, output_num)
+            else:
+                # dueling redfines Q(s, a) as V(s) + (A(s, a) - mean(A(s)))
+                value_output, advantage_output = self._network_generator(self._t_x_input, output_num)
+                self._t_network_output = tf_util.dueling_to_q_vals(value_output, advantage_output)
 
             # get the trainable variables for this network, later used to overwrite target network vars
             self._tf_network_trainables = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope='network')
@@ -66,10 +72,15 @@ class TargetDQN(BaseNetwork):
             # summarize activations
             summarizer.summarize_activations(tf.get_collection(tf.GraphKeys.ACTIVATIONS, scope='network'))
 
-            # if double DQN then we need to create network output for s_tp1
-            if self.algorithm_type == 'double' or self.algorithm_type == 'doublenstep':
+            # if double or dueling DQN then we need to create network output for s_tp1
+            if 'double' in self.algorithm_type or 'dueling' in self.algorithm_type:
                 var_scope.reuse_variables()
-                self._t_network_output_tp1 = self._network_generator(self._t_x_input_tp1, output_num)
+                if 'double' in self.algorithm_type:
+                    self._t_network_output_tp1 = self._network_generator(self._t_x_input_tp1, output_num)
+                elif 'dueling' in self.algorithm_type:
+                    # dueling redfines Q(s, a) as V(s) + (A(s, a) - mean(A(s)))
+                    value_output_tp1, advantage_output_tp1 = self._network_generator(self._t_x_input_tp1, output_num)
+                    self._t_network_output_tp1 = tf_util.dueling_to_q_vals(value_output_tp1, advantage_output_tp1)
 
             # summarize a histogram of each action output
             for output_ind in range(output_num):
@@ -79,7 +90,11 @@ class TargetDQN(BaseNetwork):
             summarizer.summarize_variables(train_vars=self._tf_network_trainables)
 
         with tf.variable_scope('target-network'):
-            self._t_target_network_output = self._network_generator(self._t_x_input_tp1, output_num)
+            if 'dueling' not in self.algorithm_type:
+                self._t_target_network_output = self._network_generator(self._t_x_input_tp1, output_num)
+            else:
+                target_value_output, target_advantage_output = self._network_generator(self._t_x_input_tp1, output_num)
+                self._t_target_network_output = tf_util.dueling_to_q_vals(target_value_output, target_advantage_output)
 
             # get trainables for target network, used in assign op for the update target network step
             target_network_trainables = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope='target-network')
@@ -89,18 +104,18 @@ class TargetDQN(BaseNetwork):
             self._tf_update_target_network_ops = [target_v.assign(v) for v, target_v in zip(self._tf_network_trainables, target_network_trainables)]
 
         # if double convience function to get target values for online action
-        if self.algorithm_type == 'double' or self.algorithm_type == 'doublenstep':
-            with tf.name_scope('double_target'):
-                # Target = target_Q(s_tp1, argmax(online_Q(s_tp1)))
+        if 'double' in self.algorithm_type or 'dueling' in self.algorithm_type:
+            with tf.name_scope('network_estimated_action_tp1'):
                 argmax_tp1 = tf.argmax(self._t_network_output_tp1, axis=1)
+                # Target = target_Q(s_tp1, argmax(online_Q(s_tp1)))
                 self._t_target_value_online_action = tf_util.one_hot(self._t_target_network_output, argmax_tp1, output_num)
 
         # caclulate QLoss
         with tf.name_scope('loss'):
             # nstep rewards are calculated outside the gpu/graph because it requires a loop
-            if self.algorithm_type != 'nstep' and self.algorithm_type != 'doublenstep':
+            if 'nstep' not in self.algorithm_type:
                 with tf.name_scope('estimated-reward-tp1'):
-                    if self.algorithm_type == 'double':
+                    if self.algorithm_type == 'double' or self.algorithm_type == 'dueling':
                         # Target = target_Q(s_tp1, argmax(online_Q(s_tp1)))
                         target = self._t_target_value_online_action
                     elif self.algorithm_type == 'dqn':
@@ -163,7 +178,7 @@ class TargetDQN(BaseNetwork):
         self.anneal_learning_rate(global_step)
 
         # if not nstep we pass all vars to gpu
-        if self.algorithm_type != 'nstep' and self.algorithm_type != 'doublenstep':
+        if 'nstep' not in self.algorithm_type:
             feed_dict = {self._t_x_input_channel_firstdim: states, self._t_x_input_tp1_channel_firstdim: states_tp1,
                          self._t_x_actions: actions, self._t_x_rewards: rewards, self._t_x_terminals: terminals,
                          self._tf_learning_rate: self.current_learning_rate}
@@ -179,7 +194,7 @@ class TargetDQN(BaseNetwork):
                 target_feed_dict = {self._t_x_input_tp1_channel_firstdim: [states_tp1[-1]]}
                 if self.algorithm_type == 'nstep':
                     curr_reward = max(sess.run(self._t_target_network_output, feed_dict=target_feed_dict)[0])
-                elif self.algorithm_type == 'doublenstep':
+                elif self.algorithm_type == 'doublenstep' or self.algorithm_type == 'duelingnstep':
                     curr_reward = sess.run(self._t_target_value_online_action, feed_dict=target_feed_dict)[0]
 
             # get bootstrap estimate of last state_tp1

@@ -118,13 +118,27 @@ def one_hot(select_from_tensor, index_tensor, output_num):
     return tf.reduce_sum(tf.multiply(select_from_tensor, one_hot), axis=1)
 
 
+def dueling_to_q_vals(value_tensor, advantage_tensor):
+    # dueling redfines Q(s, a) as V(s) + (A(s, a) - mean(A(s)))
+    t_advantage_mean = tf.reduce_mean(advantage_tensor, axis=-1, keep_dims=True)
+    return value_tensor + (advantage_tensor - t_advantage_mean)
+
+
 def create_nips_network(input_tensor, output_num):
     l_hid1 = tflearn.conv_2d(input_tensor, 16, 8, strides=4, activation='relu', scope='conv1', padding='valid')
     l_hid2 = tflearn.conv_2d(l_hid1, 32, 4, strides=2, activation='relu', scope='conv2', padding='valid')
     l_hid3 = tflearn.fully_connected(l_hid2, 256, activation='relu', scope='dense3')
     out = tflearn.fully_connected(l_hid3, output_num, scope='denseout')
-
     return out
+
+
+def create_dueling_nips_network(input_tensor, output_num):
+    l_hid1 = tflearn.conv_2d(input_tensor, 16, 8, strides=4, activation='relu', scope='conv1', padding='valid')
+    l_hid2 = tflearn.conv_2d(l_hid1, 32, 4, strides=2, activation='relu', scope='conv2', padding='valid')
+    l_hid3 = tflearn.fully_connected(l_hid2, 256, activation='relu', scope='dense3')
+    value_out = tflearn.fully_connected(l_hid3, 1, scope='valueout')
+    advantage_out = tflearn.fully_connected(l_hid3, output_num, scope='advantageout')
+    return value_out, advantage_out
 
 
 def create_a3c_network(input_tensor, output_num):
@@ -135,3 +149,52 @@ def create_a3c_network(input_tensor, output_num):
     critic_out = tflearn.fully_connected(l_hid3, 1, activation='linear', scope='criticout')
 
     return actor_out, critic_out
+
+
+def global_norm_clip_grads_vars(grads_vars, norm_clip):
+    """
+    Accepts the list of tuples (gradient, tensor) returned by compute_gradients and applies global norm clipping
+    Returns list of tuples (clipped_gradients, tensor)
+    """
+    # kinda lame that clip by global norm doesn't accept the list of tuples returned from compute_gradients
+    # so we unzip then zip
+    tensors = [tensor for gradient, tensor in grads_vars]
+    grads = [gradient for gradient, tensor in grads_vars]
+    clipped_gradients, _ = tf.clip_by_global_norm(grads, norm_clip)  # returns list[tensors], norm
+    return zip(clipped_gradients, tensors)
+
+
+def nstep_rewards_nd(rewards_placeholder, last_reward, q_discount, rewards_shape=[]):
+    """ Calculates nstep_rewards for a nd tensor with unkown 1st dimension static size.
+    To use a 1d tensor simply don't pass a shape to rewards_shape
+    To use a nd tensor pass a shape like [5, 5] to rewards_shape, don't include the None dimension
+    Args:
+        rewards_placeholder: Placeholder for rewards earned from the environment, should be shape [None]
+        last_reward: The estimated reward from the last state_tp1, should be 0 if last state is terminal
+            Must be at least 1d, ie: tf.Constant([0.0])
+        q_discount: The q discount value (also referred to as lambda) generally ~0.9 - 0.99
+    Returns:
+        Returns nstep_rewards of shape rewards_placeholder
+    """
+    # 1d case
+    if len(rewards_shape) == 0:
+        stack_shape_invariant = tf.TensorShape([None])
+        output_shape = [-1]
+    # nd case
+    else:
+        stack_shape_invariant = tf.TensorShape([None] + rewards_shape)
+        output_shape = [-1] + rewards_shape
+
+    num_iter = tf.squeeze(tf.shape(rewards_placeholder)[0])
+    condition = lambda i, s: tf.greater(i, 0)  # noqa: E731
+    def body(counter, stack):  # noqa: E301,E306
+        stack = tf.concat([stack, [rewards_placeholder[counter - 1] + stack[-1] * q_discount]], axis=0)
+        return (tf.subtract(counter, 1), stack)
+
+    _, tf_nstep_rewards = tf.while_loop(condition, body, (num_iter, last_reward),
+                                        shape_invariants=(num_iter.get_shape(), stack_shape_invariant),
+                                        parallel_iterations=1, back_prop=False)
+
+    # remove the first item from stack, it will be the rewards_placeholder
+    # reverse the nstep rewards, they are computed backward this puts them forward looking
+    return tf.reshape(tf_nstep_rewards[1:], output_shape)[::-1]
