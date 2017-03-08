@@ -6,7 +6,7 @@ from reinforcepy.handlers.framebuffer import FrameBuffer
 
 
 class BaseProcessLearner(torch.multiprocessing.Process):
-    def __init__(self, environment, global_dict, phi_length=4,
+    def __init__(self, environment, network, global_dict, phi_length=4,
                  async_update_step=5, reward_clip_vals=[-1, 1], testing=False):
         super().__init__()
 
@@ -16,7 +16,7 @@ class BaseProcessLearner(torch.multiprocessing.Process):
         self.reward_clip_vals = reward_clip_vals
 
         # network stuff
-        self.network = None
+        self.host_network = network
 
         self.phi_length = phi_length
         self.frame_buffer = None
@@ -38,16 +38,15 @@ class BaseProcessLearner(torch.multiprocessing.Process):
         state = self.environment.get_state()
         for _ in range(self.phi_length):
             self.frame_buffer.add_state_to_buffer(state)
-        self.network.load_state_dict(self.global_dict['network'].state_dict())
+        self.network.load_state_dict(self.host_network.state_dict())
+        self.network.reset_lstm_state()
 
     def run(self):
         from reinforcepy.networks.dqn.ptorch.nstep_a3c import A3CModel
         try:
             torch.manual_seed(os.getpid())
             self.network = A3CModel()
-            for param, shared_param in zip(self.network.parameters(), self.global_dict['network'].parameters()):
-                # Use gradients from the local model
-                shared_param.grad.data = param.grad.data
+            self.network.cuda()
             self.network.train()
             self.environment = self._environment_generator(seed=np.random.RandomState(os.getpid()))
             self.frame_buffer = FrameBuffer([1, self.phi_length] + self.environment.get_state_shape())

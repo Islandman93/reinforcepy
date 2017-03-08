@@ -6,7 +6,7 @@ import torch.optim as optim
 import torch
 import torch.autograd as autograd
 from torch.autograd import Variable
-from reinforcepy.handlers.linear_annealer import LinnearAnnealer
+# from reinforcepy.handlers.linear_annealer import LinnearAnnealer
 
 
 def weights_init(m):
@@ -28,23 +28,26 @@ def weights_init(m):
 
 
 class A3CModel(nn.Module):
-    def __init__(self):
+    def __init__(self, is_host=False):
         super().__init__()
         self.conv1 = nn.Conv2d(4, 16, 8, stride=4)
         self.conv2 = nn.Conv2d(16, 32, 4, stride=2)
         self.hid3 = nn.Linear(9*9*32, 256)
+        self.lstm = nn.LSTMCell(256, 256)
         self.actor = nn.Linear(256, 4)
         self.critic = nn.Linear(256, 1)
         self.apply(weights_init)
-        self.optimizer = optim.RMSprop(self.parameters(), 0.0007, alpha=0.99, eps=0.1)
-        self.batch_gradient_vars = {}
-        self.reset_batch_gradient_vars()
+        self.batch_vars = []
+        if is_host:
+            self.optimizer = optim.RMSprop(self.parameters(), 0.0007, alpha=0.99, eps=0.1)
+        self.last_lstm_state = None
 
-    def forward(self, x):
+    def forward(self, x, lstm_state):
         x = F.relu(self.conv1(x))
         x = F.relu(self.conv2(x))
         x = x.view(-1, 9*9*32)
         x = F.relu(self.hid3(x))
+        x = self.lstm(x, lstm_state)
         actor = self.actor(x)
         critic = self.critic(x)
         return actor, critic
@@ -72,7 +75,7 @@ class A3CModel(nn.Module):
         if not terminals[-1]:
             last_state = np.expand_dims(states_tp1[-1], 0)
             torch_last_state = torch.from_numpy(last_state).float() / 255.0
-            _, critic = self.forward(Variable(torch_last_state))
+            _, critic, _ = self.forward(Variable(torch_last_state).cuda(), self.last_lstm_state)
             curr_reward = critic.data[0, 0]
 
         td_rewards = []
@@ -82,49 +85,41 @@ class A3CModel(nn.Module):
         # need to reverse to be forward looking
         td_rewards = list(reversed(td_rewards))
 
-        # get bootstrap estimate of last state_tp1 possible to do in Torch maybe for a speed up?
-        # td_rewards = []
-        # rewards = Variable(torch.from_numpy(np.asarray(rewards)).float())
-        # for reward in reversed(rewards):
-        #     curr_reward = reward + 0.99 * curr_reward
-        #     td_rewards.append(curr_reward)
+        # calculate losses
+        batch_vars = self.batch_vars
+        value_loss = 0
+        for (action, value, entropy), r in zip(batch_vars, td_rewards):
+            action.reinforce(value.data.squeeze() - r)
+            # smooth_l1_loss == huber_loss
+            loss = F.smooth_l1_loss(value, Variable(torch.Tensor([r])).cuda())
+            value_loss += loss
+            value_loss += entropy * 0.01
 
-        # torch_states = torch.from_numpy(np.asarray(states)).float() / 255.0
-        # actor, critic = self.forward(Variable(torch_states))
-        # actions = [a.multinomial() for a in actor]
+        optimizer.zero_grad()
+        variables = [value_loss] + list(map(lambda p: p.action, batch_vars))
+        gradients = [torch.ones(1).cuda()] + [None] * len(batch_vars)
+        autograd.backward(variables, gradients)
+        optimizer.step()
+        # reset state
+        self.reset_batch()
 
-        loss = 0
-        for log_action, critic, r in zip(self.batch_gradient_vars['log_policy_action'], self.batch_gradient_vars['critic_output'], td_rewards):
-            critic_diff = critic - r
-            loss += log_action * critic_diff.detach()
-            loss += (critic_diff ** 2) * 0.5
-            # value_loss += F.smooth_l1_loss(value, Variable(torch.Tensor([r])))
-
-        self.optimizer.zero_grad()
-        # final_nodes = [value_loss] + actions
-        # gradients = [torch.ones(1)] + [None] * len(states)
-        # autograd.backward(final_nodes, gradients)
-        loss.backward()
-        self.optimizer.step()
-        self.reset_batch_gradient_vars()
 
     def reset_batch_gradient_vars(self):
         self.batch_gradient_vars['log_policy_action'] = []
         self.batch_gradient_vars['entropy'] = []
         self.batch_gradient_vars['critic_output'] = []
+    # def backward(self):
+    #     #
+    #     # calculate step returns in reverse order
+    #     returns = []
+    #     step_return = self.outputs[-1].value.data
+    #     for reward in self.rewards[::-1]:
+    #         step_return.mul_(self.discount).add_(reward.cuda() if USE_CUDA else reward)
+    #         returns.insert(0, step_return.clone())
+    #     #
 
+    def reset_batch(self):
+        self.batch_vars = []
 
-# class PyTorchNStepA3C():
-#     def __init__(self, input_shape, output_num, optimizer=None, network_generator=A3CModel, q_discount=0.99,
-#                  entropy_regularization=0.01, global_norm_clipping=40, initial_learning_rate=0.001, learning_rate_decay=None,
-#                  deterministic=False):
-#         # if optimizer is none use default rms prop
-#         self.network = network_generator()
-#         if optimizer is None:
-#             optimizer = optim.RMSprop(self.network.parameters(), initial_learning_rate, alpha=0.99, eps=0.1)
-#         self.network.optimizer = optimizer
-#         self.learning_rate_annealer = LinnearAnnealer(initial_learning_rate, 0, learning_rate_decay)
-#         self.global_norm_clipping = global_norm_clipping
-#         self._q_discount = q_discount
-#         self._entropy_regularization = entropy_regularization
-#         self.deterministic = deterministic
+    def reset_lstm_state(self):
+        self.last_lstm_state = None

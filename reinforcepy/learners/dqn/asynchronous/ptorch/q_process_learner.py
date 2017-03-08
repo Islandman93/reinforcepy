@@ -25,8 +25,8 @@ class QProcessLearner(BaseProcessLearner, BaseQLearner):
 
         # check perform gradient step
         if self.step_count % self.async_update_step == 0 or terminal:
-            self.network.load_state_dict(self.global_dict['network'].state_dict())
-            self.network.train_step(*self.get_minibatch_vars(), 0.1)
+            self.network.load_state_dict(self.host_network.state_dict())
+            self.network.train_step(*self.get_minibatch_vars(), 0.1, self.host_network.optimizer)
             self.reset_minibatch()
 
     def minibatch_accumulate(self, state, action, reward, state_tp1, terminal):
