@@ -2,7 +2,7 @@ import json
 import datetime
 from reinforcepy.environments import ALEEnvironment
 from reinforcepy.networks.dqn.tflow.unreal.nstep_a3c_lstm_aux_tasks import NStepA3CLSTMUNREAL
-from reinforcepy.learners.dqn.asynchronous.auxiliary_thread_learner import AuxiliaryThreadLearner
+from reinforcepy.learners.dqn.asynchronous.auxiliary_recurrent_thread_learner import AuxiliaryRecurrentThreadLearner
 from reinforcepy.learners.dqn.asynchronous.async_thread_host import AsyncThreadHost
 
 
@@ -19,7 +19,7 @@ def main(rom_args, learner_args, network_args, num_threads, epochs, logdir, save
     thread_host = AsyncThreadHost(network, log_dir=logdir)
 
     # create threads
-    threads = [AuxiliaryThreadLearner(environments[t], network, thread_host.shared_dict, **learner_args) for t in range(num_threads)]
+    threads = [AuxiliaryRecurrentThreadLearner(environments[t], network, thread_host.shared_dict, **learner_args) for t in range(num_threads)]
 
     reward_list = thread_host.run_epochs(epochs, threads, save_interval=save_interval)
 

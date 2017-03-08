@@ -1,4 +1,3 @@
-from copy import deepcopy
 import numpy as np
 import tensorflow as tf
 from tensorflow.contrib.layers import flatten as tf_flatten
@@ -8,43 +7,22 @@ from ..target_dqn import TargetDQN
 import reinforcepy.networks.util.tflow_util as tf_util
 
 
-def create_a3c_lstm_network(input_tensor, output_num, initial_lstm_state=None):
+def create_a3c_network(input_tensor, output_num):
     l_hid1 = tflearn.conv_2d(input_tensor, 16, 8, strides=4, activation='relu', scope='conv1', padding='valid')
     l_hid2 = tflearn.conv_2d(l_hid1, 32, 4, strides=2, activation='relu', scope='conv2', padding='valid')
     l_hid3 = tflearn.fully_connected(l_hid2, 256, activation='relu', scope='dense3')
+    actor_out = tflearn.fully_connected(l_hid3, output_num, activation='softmax', scope='actorout')
+    critic_out = tflearn.fully_connected(l_hid3, 1, activation='linear', scope='criticout')
 
-    # reshape l_hid3 to lstm usable shape (1, batch_size, 256)
-    l_hid3_reshape = tf.reshape(l_hid3, [1, -1, 256])
-
-    # have to custom make the lstm output here to use tf.nn.dynamic_rnn
-    l_lstm = tflearn.BasicLSTMCell(256)
-    # BasicLSTMCell lists state size as tuple so we need to pass tuple into dynamic_rnn
-    lstm_state_size = tuple([[1, x] for x in l_lstm.state_size])
-    # has to specifically be the same type tf.python.ops.rnn_cell.LSTMStateTuple
-    if initial_lstm_state is None:
-        from tensorflow.contrib.rnn.python.ops import core_rnn_cell
-        initial_lstm_state = core_rnn_cell.LSTMStateTuple(tf.placeholder(tf.float32, shape=lstm_state_size[0], name='initial_lstm_state1'),
-                                                          tf.placeholder(tf.float32, shape=lstm_state_size[1], name='initial_lstm_state2'))
-    # dynamically get the sequence length
-    sequence_length = tf.reshape(tf.shape(l_hid3)[0], [1])
-    l_lstm4, new_lstm_state = tf.nn.dynamic_rnn(l_lstm, l_hid3_reshape,
-                                                initial_state=initial_lstm_state, sequence_length=sequence_length,
-                                                time_major=False, scope='lstm4')
-
-    # reshape lstm back to (batch_size, 256)
-    l_lstm4_reshape = tf.reshape(l_lstm4, [-1, 256])
-    actor_out = tflearn.fully_connected(l_lstm4_reshape, output_num, activation='softmax', scope='actorout')
-    critic_out = tflearn.fully_connected(l_lstm4_reshape, 1, activation='linear', scope='criticout')
-
-    return actor_out, critic_out, initial_lstm_state, new_lstm_state, l_lstm4_reshape
+    return actor_out, critic_out, l_hid3
 
 
-def create_aux_deconv_from_lstm_output(lstm_output, output_num):
+def create_aux_deconv_from_hidden_output(hidden_output, output_num):
     # create aux deconv net
     # the paper says 7x7 but that doesn't work in tensorflow, to get a deconv of 20x20 I think you actually need 9x9
     # also the inverse of l_hid2 would be from 9x9->20x20 so this makes more sense
     # first map lstm output batchsizex256 -> 9x9x32 = 2592
-    deconv_linear = tflearn.fully_connected(lstm_output, 2592, activation='relu', scope='deconv-linear')
+    deconv_linear = tflearn.fully_connected(hidden_output, 2592, activation='relu', scope='deconv-linear')
     deconv_linear = tf.reshape(deconv_linear, (-1, 9, 9, 32))  # since this layer is learned it doesn't matter how we reshape
 
     deconv_value = tflearn.conv_2d_transpose(deconv_linear, 1, 4, [20, 20], strides=2, padding='valid', scope='deconv-value')
@@ -52,8 +30,8 @@ def create_aux_deconv_from_lstm_output(lstm_output, output_num):
     return deconv_value, deconv_advantage
 
 
-class NStepA3CLSTMUNREAL(TargetDQN):
-    def __init__(self, input_shape, output_num, optimizer=None, network_generator=create_a3c_lstm_network, q_discount=0.99,
+class NStepA3CUNREAL(TargetDQN):
+    def __init__(self, input_shape, output_num, optimizer=None, network_generator=create_a3c_network, q_discount=0.99,
                  auxiliary_pc_q_discount=0.99, entropy_regularization=0.01, global_norm_clipping=40.0, initial_learning_rate=0.001,
                  learning_rate_decay=None):
         self._entropy_regularization = entropy_regularization
@@ -82,7 +60,7 @@ class NStepA3CLSTMUNREAL(TargetDQN):
             x_input_aux_rew_pred = tf.cast(tf.transpose(x_input_reward_prediction_channel_firstdim, perm=[0, 2, 3, 1]), tf.float32) / 255.0
 
         with tf.variable_scope('network') as var_scope:
-            actor_output, critic_output, initial_lstm_state, new_lstm_state, lstm_output = self._network_generator(x_input, output_num)
+            actor_output, critic_output, hidden3_output = self._network_generator(x_input, output_num)
             # flatten the critic_output NOTE: THIS IS VERY IMPORTANT
             # otherwise critic_output will be (batch_size, 1) and all ops with it and x_rewards will create a
             # tensor of shape (batch_size, batch_size)
@@ -91,8 +69,7 @@ class NStepA3CLSTMUNREAL(TargetDQN):
             var_scope.reuse_variables()
 
             # used to calculate nstep rewards and auxiliary nstep rewards
-            _, critic_output_tp1, _, _, lstm_output_tp1 = self._network_generator(x_input_tp1, output_num,
-                                                                                  initial_lstm_state=initial_lstm_state)
+            _, critic_output_tp1, hidden3_output_tp1 = self._network_generator(x_input_tp1, output_num)
 
             # summarize a histogram of each action output
             for output_ind in range(output_num):
@@ -159,9 +136,9 @@ class NStepA3CLSTMUNREAL(TargetDQN):
                 summarizer.summarize(total_loss, 'scalar', 'total-loss')
 
         with tf.variable_scope('aux-deconv-output') as var_scope:
-            deconv_value, deconv_advantage = create_aux_deconv_from_lstm_output(lstm_output, output_num)
+            deconv_value, deconv_advantage = create_aux_deconv_from_hidden_output(hidden3_output, output_num)
             var_scope.reuse_variables()
-            deconv_value_tp1, _ = create_aux_deconv_from_lstm_output(lstm_output_tp1, output_num)
+            deconv_value_tp1, _ = create_aux_deconv_from_hidden_output(hidden3_output_tp1, output_num)
 
         with tf.name_scope('pixel-control'):
             # add input for states_tp1
@@ -242,7 +219,7 @@ class NStepA3CLSTMUNREAL(TargetDQN):
             # TODO: it's unknown whether we keep the same rmsprop vars for auxiliary tasks
             # we could create another optimizer that stores separate vars for each
             with tf.name_scope('auxiliary-pixel-loss-update'):
-                gradients = optimizer.compute_gradients(aux_pixel_loss* aux_pixel_loss_weight_placeholder)
+                gradients = optimizer.compute_gradients(aux_pixel_loss * aux_pixel_loss_weight_placeholder)
                 clipped_grads_tensors = tf_util.global_norm_clip_grads_vars(gradients, self.global_norm_clipping)
                 tf_train_step_auxiliary_pixel_loss = optimizer.apply_gradients(clipped_grads_tensors)
             # TODO: it's unknown whether we keep the same rmsprop vars for auxiliary tasks
@@ -257,13 +234,13 @@ class NStepA3CLSTMUNREAL(TargetDQN):
             auxiliary_summaries = tf.summary.merge([aux_pixel_summaries, value_replay_critic_loss_summary])
 
         # function to get network output
-        def get_output(sess, state, lstm_state):
-            feed_dict = {x_input_channel_firstdim: state, initial_lstm_state: lstm_state}
-            output, lstm_state = sess.run([actor_output, new_lstm_state], feed_dict=feed_dict)
-            return get_action_from_probabilities(output[0]), lstm_state
+        def get_output(sess, state):
+            feed_dict = {x_input_channel_firstdim: state}
+            output = sess.run(actor_output, feed_dict=feed_dict)
+            return get_action_from_probabilities(output[0])
 
         # function to get mse feed dict
-        def train_step(sess, states, actions, rewards, states_tp1, terminals, lstm_state, global_step=0, summaries=False):
+        def train_step(sess, states, actions, rewards, states_tp1, terminals, global_step=0, summaries=False):
             self.anneal_learning_rate(global_step)
 
             # nstep calculate TD reward
@@ -273,7 +250,6 @@ class NStepA3CLSTMUNREAL(TargetDQN):
             all_states_plus_tp1 = np.concatenate((np.expand_dims(states[0], axis=0), states_tp1), axis=0)
             feed_dict = {x_input_channel_firstdim: states, x_actions: actions, x_rewards: rewards,
                          x_input_tp1_channel_firstdim: all_states_plus_tp1, x_last_state_terminal: terminals[-1],
-                         initial_lstm_state: lstm_state,
                          tf_learning_rate: self.current_learning_rate}
 
             if summaries:
@@ -282,19 +258,15 @@ class NStepA3CLSTMUNREAL(TargetDQN):
                 return sess.run([tf_train_step], feed_dict=feed_dict)
 
         # value replay
-        def train_auxiliary_value_replay(sess, states, rewards, states_tp1, terminals, lstm_state, task_weight=1, summaries=False):
+        def train_auxiliary_value_replay(sess, states, rewards, states_tp1, terminals, task_weight=1, summaries=False):
             # nstep calculate TD reward
             if sum(terminals) > 1:
                 raise ValueError('Value replay reward for mutiple terminal states in a batch is undefined')
 
-            # if lstm_state is none set it to zeros, the paper doesn't define if the lstm state is stored or reset
-            if lstm_state is None:
-                lstm_state = (np.zeros((1, 256)), np.zeros((1, 256)))
-
             all_states_plus_tp1 = np.concatenate((np.expand_dims(states[0], axis=0), states_tp1), axis=0)
             feed_dict = {x_input_channel_firstdim: states, x_rewards: rewards,
                          x_input_tp1_channel_firstdim: all_states_plus_tp1, x_last_state_terminal: terminals[-1],
-                         tf_learning_rate: self.current_learning_rate * task_weight, initial_lstm_state: lstm_state}
+                         tf_learning_rate: self.current_learning_rate * task_weight}
 
             if summaries:
                 return sess.run([value_replay_critic_loss_summary, tf_train_step_auxiliary_value_replay], feed_dict=feed_dict)[0]
@@ -311,35 +283,27 @@ class NStepA3CLSTMUNREAL(TargetDQN):
                 return sess.run([tf_train_step_auxiliary_reward_pred], feed_dict=feed_dict)
 
         # pixel control
-        def train_auxiliary_pixel_control(sess, states, actions, states_tp1, terminals, lstm_state, task_weight=0.0007, summaries=False):
-            # if lstm_state is none set it to zeros, the paper doesn't define if the lstm state is stored or reset
-            if lstm_state is None:
-                lstm_state = (np.zeros((1, 256)), np.zeros((1, 256)))
-
+        def train_auxiliary_pixel_control(sess, states, actions, states_tp1, terminals, task_weight=0.0007, summaries=False):
             all_states_plus_tp1 = np.concatenate((np.expand_dims(states[0], axis=0), states_tp1), axis=0)
             feed_dict = {x_input_channel_firstdim: states, x_actions: actions,
                          x_input_tp1_channel_firstdim: all_states_plus_tp1, x_last_state_terminal: terminals[-1],
                          aux_pc_input_tp1_channel_firstdim: states_tp1, aux_pixel_loss_weight_placeholder: task_weight,
-                         tf_learning_rate: self.current_learning_rate * task_weight, initial_lstm_state: lstm_state}
+                         tf_learning_rate: self.current_learning_rate * task_weight}
             if summaries:
                 return sess.run([aux_pixel_summaries, tf_train_step_auxiliary_pixel_loss], feed_dict=feed_dict)[0]
             else:
                 return sess.run([tf_train_step_auxiliary_pixel_loss], feed_dict=feed_dict)
 
-        def train_auxiliary_vr_pc(sess, states, actions, rewards, states_tp1, terminals, lstm_state, pixel_control_weight=0.0007, summaries=False):
+        def train_auxiliary_vr_pc(sess, states, actions, rewards, states_tp1, terminals, pixel_control_weight=0.0007, summaries=False):
             # nstep calculate TD reward
             if sum(terminals) > 1:
                 raise ValueError('Value replay reward for mutiple terminal states in a batch is undefined')
-
-            # if lstm_state is none set it to zeros, the paper doesn't define if the lstm state is stored or reset
-            if lstm_state is None:
-                lstm_state = (np.zeros((1, 256)), np.zeros((1, 256)))
 
             all_states_plus_tp1 = np.concatenate((np.expand_dims(states[0], axis=0), states_tp1), axis=0)
             feed_dict = {x_input_channel_firstdim: states, x_actions: actions, x_rewards: rewards,
                          x_input_tp1_channel_firstdim: all_states_plus_tp1, x_last_state_terminal: terminals[-1],
                          aux_pc_input_tp1_channel_firstdim: states_tp1, aux_pixel_loss_weight_placeholder: pixel_control_weight,
-                         tf_learning_rate: self.current_learning_rate, initial_lstm_state: lstm_state}
+                         tf_learning_rate: self.current_learning_rate}
             if summaries:
                 return sess.run([auxiliary_summaries, tf_train_step_auxiliary_value_replay, tf_train_step_auxiliary_pixel_loss],
                                 feed_dict=feed_dict)[0]
@@ -354,29 +318,23 @@ class NStepA3CLSTMUNREAL(TargetDQN):
         self._train_all_auxiliary = train_auxiliary_vr_pc
         self._save_variables = network_trainables
 
-    def train_step(self, state, action, reward, state_tp1, terminal, lstm_state=None, global_step=None, summaries=False):
-        return self._train_step(self.tf_session, state, action, reward, state_tp1, terminal, lstm_state=lstm_state, global_step=global_step,
+    def train_step(self, state, action, reward, state_tp1, terminal, global_step=None, summaries=False):
+        return self._train_step(self.tf_session, state, action, reward, state_tp1, terminal, global_step=global_step,
                                 summaries=summaries)
 
-    def train_auxiliary_value_replay(self, state, reward, state_tp1, terminal, lstm_state=None, summaries=False):
-        return self._train_auxiliary_value_replay(self.tf_session, state, reward, state_tp1, terminal, lstm_state=lstm_state, summaries=summaries)
+    def train_auxiliary_value_replay(self, state, reward, state_tp1, terminal, summaries=False):
+        return self._train_auxiliary_value_replay(self.tf_session, state, reward, state_tp1, terminal, summaries=summaries)
 
-    def train_auxiliary_pixel_control(self, state, action, state_tp1, terminal, lstm_state=None, summaries=False):
-        return self._train_auxiliary_pixel_control(self.tf_session, state, action, state_tp1, terminal, lstm_state=lstm_state, summaries=summaries)
+    def train_auxiliary_pixel_control(self, state, action, state_tp1, terminal, summaries=False):
+        return self._train_auxiliary_pixel_control(self.tf_session, state, action, state_tp1, terminal, summaries=summaries)
 
     def train_auxiliary_reward_preditiction(self, states, rewards, summaries=False):
         return self._train_auxiliary_reward_preditiction(self.tf_session, states, rewards, summaries=summaries)
 
-    def train_auxiliary_vr_pc(self, state, action, reward, state_tp1, terminal, lstm_state=None, summaries=False):
+    def train_auxiliary_vr_pc(self, state, action, reward, state_tp1, terminal, summaries=False):
         # Much faster than training individually, just one gpu copy then free GIL
         # this uses the same data for value replay and pixel control but that shouldn't be a problem
-        return self._train_all_auxiliary(self.tf_session, state, action, reward, state_tp1, terminal, lstm_state=lstm_state, summaries=summaries)
-
-    def blank_lstm_state(self):
-        return (np.zeros((1, 256)), np.zeros((1, 256)))
-
-    def get_output(self, x, lstm_state):
-        return self._get_output(self.tf_session, x, lstm_state)
+        return self._train_all_auxiliary(self.tf_session, state, action, reward, state_tp1, terminal, summaries=summaries)
 
 
 def get_action_from_probabilities(cnn_action_probabilities):
