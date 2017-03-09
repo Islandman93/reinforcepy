@@ -6,6 +6,7 @@ examples/ALE/roms/
 
 # custom experiment results
 _experiments/
+**/runs/**
 
 # tensorboard files
 events.out.tfevents.*

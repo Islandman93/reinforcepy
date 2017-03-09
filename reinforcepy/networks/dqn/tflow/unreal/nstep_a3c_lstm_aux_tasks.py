@@ -111,8 +111,7 @@ class NStepA3CLSTMUNREAL(TargetDQN):
 
             # reward prediction
             l_hid1 = tflearn.conv_2d(x_input_aux_rew_pred, 16, 8, strides=4, activation='relu', scope='conv1', padding='valid')
-            l_hid2 = tflearn.conv_2d(l_hid1, 32, 4, strides=2, activation='relu', scope='conv2', padding='valid')
-            cnn_encoding = tflearn.fully_connected(l_hid2, 256, activation='relu', scope='dense3')
+            cnn_encoding = tflearn.conv_2d(l_hid1, 32, 4, strides=2, activation='relu', scope='conv2', padding='valid')
 
         # nstep rewards
         with tf.name_scope('nstep_reward'):
