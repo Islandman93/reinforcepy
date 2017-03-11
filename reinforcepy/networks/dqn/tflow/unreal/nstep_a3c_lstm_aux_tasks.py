@@ -104,10 +104,10 @@ class NStepA3CLSTMUNREAL(TargetDQN):
             network_trainables = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope='network')
 
             # summarize activations
-            summarizer.summarize_activations(tf.get_collection(tf.GraphKeys.ACTIVATIONS, scope='network'))
+            # summarizer.summarize_activations(tf.get_collection(tf.GraphKeys.ACTIVATIONS, scope='network'))
 
             # add network summaries
-            summarizer.summarize_variables(train_vars=network_trainables)
+            # summarizer.summarize_variables(train_vars=network_trainables)
 
             # reward prediction
             l_hid1 = tflearn.conv_2d(x_input_aux_rew_pred, 16, 8, strides=4, activation='relu', scope='conv1', padding='valid')
@@ -178,15 +178,15 @@ class NStepA3CLSTMUNREAL(TargetDQN):
             # the average abs distance is taken over pixels and channels which is the last dimension
             reward_pixel_difference = tf.reduce_mean(tf.abs(states_patches - states_tp1_patches), axis=-1)
             # now we have rewards over batch_sizex20x20
-            reward_pixel_diff_summary = tf.summary.image('pixel-difference', tf.expand_dims(reward_pixel_difference, axis=-1))
-            deconv_value_summary = tf.summary.image('deconv-value', deconv_value)
-            for i in range(output_num):
-                if i == 0:
-                    deconv_advantage_summary = tf.summary.image('deconv-advantage-{0}'.format(i),
-                                                                tf.expand_dims(deconv_advantage[:, :, :, i], axis=-1))
-                else:
-                    deconv_advantage_summary = tf.summary.merge([deconv_advantage_summary, tf.summary.image('deconv-advantage-{0}'.format(i),
-                                                                 tf.expand_dims(deconv_advantage[:, :, :, i], axis=-1))])
+            # reward_pixel_diff_summary = tf.summary.image('pixel-difference', tf.expand_dims(reward_pixel_difference, axis=-1))
+            # deconv_value_summary = tf.summary.image('deconv-value', deconv_value)
+            # for i in range(output_num):
+            #     if i == 0:
+            #         deconv_advantage_summary = tf.summary.image('deconv-advantage-{0}'.format(i),
+            #                                                     tf.expand_dims(deconv_advantage[:, :, :, i], axis=-1))
+            #     else:
+            #         deconv_advantage_summary = tf.summary.merge([deconv_advantage_summary, tf.summary.image('deconv-advantage-{0}'.format(i),
+            #                                                      tf.expand_dims(deconv_advantage[:, :, :, i], axis=-1))])
 
             # get the dueling Q output values, V(s) + (A(s,a) - mean(A(s)))
             deconv_q_values = deconv_value + (deconv_advantage - tf.reduce_mean(deconv_advantage, axis=-1, keep_dims=True))
@@ -209,10 +209,12 @@ class NStepA3CLSTMUNREAL(TargetDQN):
             # TODO: not sure if gradients are summed or meaned
             aux_pixel_loss_weight_placeholder = tf.placeholder(tf.float32)
             aux_pixel_loss = tf.reduce_sum(tf.reduce_mean(tf.square(aux_pixel_loss_not_agg), axis=1))
-            aux_pixel_summaries = tf.summary.merge([reward_pixel_diff_summary, deconv_value_summary,
-                                                    deconv_advantage_summary, tf.summary.scalar('aux-pixel-loss', aux_pixel_loss)])
+            # aux_pixel_summaries = tf.summary.merge([reward_pixel_diff_summary, deconv_value_summary,
+            #                                         deconv_advantage_summary, tf.summary.scalar('aux-pixel-loss', aux_pixel_loss)])
+            aux_pixel_summaries = tf.summary.scalar('aux-pixel-loss', aux_pixel_loss)
 
         with tf.name_scope('reward-prediction'):
+            # cnn_encoding = tf.reshape([1, -1])
             rp_fc4 = tflearn.fully_connected(cnn_encoding, 128, activation='relu', scope='rp-fc4')
             reward_prediction = tflearn.fully_connected(rp_fc4, 3, activation='softmax', scope='reward-pred-output')
             # TODO: this is hack because rewards are clipped to -1 and 1
@@ -241,7 +243,7 @@ class NStepA3CLSTMUNREAL(TargetDQN):
             # TODO: it's unknown whether we keep the same rmsprop vars for auxiliary tasks
             # we could create another optimizer that stores separate vars for each
             with tf.name_scope('auxiliary-pixel-loss-update'):
-                gradients = optimizer.compute_gradients(aux_pixel_loss* aux_pixel_loss_weight_placeholder)
+                gradients = optimizer.compute_gradients(aux_pixel_loss * aux_pixel_loss_weight_placeholder)
                 clipped_grads_tensors = tf_util.global_norm_clip_grads_vars(gradients, self.global_norm_clipping)
                 tf_train_step_auxiliary_pixel_loss = optimizer.apply_gradients(clipped_grads_tensors)
             # TODO: it's unknown whether we keep the same rmsprop vars for auxiliary tasks

@@ -4,13 +4,15 @@ from reinforcepy.handlers.experience_replay import DataSet
 
 
 class AuxiliaryThreadLearner(QThreadLearner):
-    def __init__(self, environment, network, global_dict, dataset_size, batch_size, reward_pred_batch_size, **kwargs):
+    def __init__(self, environment, network, global_dict, dataset_size, batch_size,
+                 reward_pred_batch_size, auxiliary_tasks, **kwargs):
         super().__init__(environment, network, global_dict, **kwargs)
         env_shape = environment.get_state_shape()
         self.batch_size = batch_size
         self.reward_pred_batch_size = reward_pred_batch_size
         self.dataset = DataSet(env_shape[0], env_shape[1], max_steps=dataset_size, phi_length=self.phi_length)
         self.steps_since_train = 0
+        self.auxiliary_tasks = auxiliary_tasks
 
     def reset(self):
         state = self.environment.get_state()
@@ -55,33 +57,36 @@ class AuxiliaryThreadLearner(QThreadLearner):
 
             # auxiliary tasks
             # pixel control
-            states, actions, rewards, state_tp1s, terminals = self.dataset.random_sequential_batch(self.batch_size)
-            # sequential batch can return none if there isn't a sequential batch of requested size
-            if states is not None:
-                if summaries:
-                    summary = self.network.train_auxiliary_pixel_control(states, actions, state_tp1s, terminals, summaries=True)
-                    self.global_dict['summary_writer'].add_summary(summary, global_step=self.global_dict['counter'])
-                else:
-                    self.network.train_auxiliary_pixel_control(states, actions, state_tp1s, terminals, summaries=False)
+            if 'pixel_control' in self.auxiliary_tasks:
+                states, actions, rewards, state_tp1s, terminals = self.dataset.random_sequential_batch(self.batch_size)
+                # sequential batch can return none if there isn't a sequential batch of requested size
+                if states is not None:
+                    if summaries:
+                        summary = self.network.train_auxiliary_pixel_control(states, actions, state_tp1s, terminals, summaries=True)
+                        self.global_dict['summary_writer'].add_summary(summary, global_step=self.global_dict['counter'])
+                    else:
+                        self.network.train_auxiliary_pixel_control(states, actions, state_tp1s, terminals, summaries=False)
 
             # value replay
-            states, actions, rewards, state_tp1s, terminals = self.dataset.random_sequential_batch(self.batch_size)
-            # sequential batch can return none if there isn't a sequential batch of requested size
-            if states is not None:
-                if summaries:
-                    summary = self.network.train_auxiliary_value_replay(states, rewards, state_tp1s, terminals, summaries=True)
-                    self.global_dict['summary_writer'].add_summary(summary, global_step=self.global_dict['counter'])
-                else:
-                    self.network.train_auxiliary_value_replay(states, rewards, state_tp1s, terminals, summaries=False)
+            if 'value_replay' in self.auxiliary_tasks:
+                states, actions, rewards, state_tp1s, terminals = self.dataset.random_sequential_batch(self.batch_size)
+                # sequential batch can return none if there isn't a sequential batch of requested size
+                if states is not None:
+                    if summaries:
+                        summary = self.network.train_auxiliary_value_replay(states, rewards, state_tp1s, terminals, summaries=True)
+                        self.global_dict['summary_writer'].add_summary(summary, global_step=self.global_dict['counter'])
+                    else:
+                        self.network.train_auxiliary_value_replay(states, rewards, state_tp1s, terminals, summaries=False)
 
             # reward prediction
-            states, _, rewards, _, _ = self.dataset.reward_prioritized_sequential_batch(self.reward_pred_batch_size)
-            # reward_prioritized_sequential_batch can return none if no rewards in dataset or it can't find any
-            if states is not None:
-                if summaries:
-                    summary = self.network.train_auxiliary_reward_preditiction(states, rewards, summaries=True)
-                    self.global_dict['summary_writer'].add_summary(summary, global_step=self.global_dict['counter'])
-                else:
-                    self.network.train_auxiliary_reward_preditiction(states, rewards, summaries=False)
+            if 'reward_prediction' in self.auxiliary_tasks:
+                states, _, rewards, _, _ = self.dataset.reward_prioritized_sequential_batch(self.reward_pred_batch_size)
+                # reward_prioritized_sequential_batch can return none if no rewards in dataset or it can't find any
+                if states is not None:
+                    if summaries:
+                        summary = self.network.train_auxiliary_reward_preditiction(states, rewards, summaries=True)
+                        self.global_dict['summary_writer'].add_summary(summary, global_step=self.global_dict['counter'])
+                    else:
+                        self.network.train_auxiliary_reward_preditiction(states, rewards, summaries=False)
 
             self.steps_since_train = 0
