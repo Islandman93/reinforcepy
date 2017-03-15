@@ -1,12 +1,12 @@
-from copy import deepcopy
 import numpy as np
 import tensorflow as tf
 import tflearn
 import tflearn.helpers.summarizer as summarizer
+import reinforcepy.networks.util.tflow_util as tf_util
 from .target_dqn import TargetDQN
 
 
-def create_a3c_lstm_network(input_tensor, output_num):
+def create_a3c_lstm_network(input_tensor, output_num, initial_lstm_state=None):
     l_hid1 = tflearn.conv_2d(input_tensor, 16, 8, strides=4, activation='relu', scope='conv1', padding='valid')
     l_hid2 = tflearn.conv_2d(l_hid1, 32, 4, strides=2, activation='relu', scope='conv2', padding='valid')
     l_hid3 = tflearn.fully_connected(l_hid2, 256, activation='relu', scope='dense3')
@@ -19,9 +19,10 @@ def create_a3c_lstm_network(input_tensor, output_num):
     # BasicLSTMCell lists state size as tuple so we need to pass tuple into dynamic_rnn
     lstm_state_size = tuple([[1, x] for x in l_lstm.state_size])
     # has to specifically be the same type tf.python.ops.rnn_cell.LSTMStateTuple
-    from tensorflow.contrib.rnn.python.ops import core_rnn_cell
-    initial_lstm_state = core_rnn_cell.LSTMStateTuple(tf.placeholder(tf.float32, shape=lstm_state_size[0], name='initial_lstm_state1'),
-                                                      tf.placeholder(tf.float32, shape=lstm_state_size[1], name='initial_lstm_state2'))
+    if initial_lstm_state is None:
+        from tensorflow.contrib.rnn.python.ops import core_rnn_cell
+        initial_lstm_state = core_rnn_cell.LSTMStateTuple(tf.placeholder(tf.float32, shape=lstm_state_size[0], name='initial_lstm_state1'),
+                                                          tf.placeholder(tf.float32, shape=lstm_state_size[1], name='initial_lstm_state2'))
     # dynamically get the sequence length
     sequence_length = tf.reshape(tf.shape(l_hid3)[0], [1])
     l_lstm4, new_lstm_state = tf.nn.dynamic_rnn(l_lstm, l_hid3_reshape,
@@ -40,11 +41,9 @@ class NStepA3CLSTM(TargetDQN):
     def __init__(self, input_shape, output_num, optimizer=None, network_generator=create_a3c_lstm_network, q_discount=0.99,
                  entropy_regularization=0.01, global_norm_clipping=40, initial_learning_rate=0.001, learning_rate_decay=None):
         self._entropy_regularization = entropy_regularization
-        self.prev_lstm_state = None
         super().__init__(input_shape, output_num, None, optimizer=optimizer, network_generator=network_generator,
                          q_discount=q_discount, loss_clipping=None, global_norm_clipping=global_norm_clipping,
                          initial_learning_rate=initial_learning_rate, learning_rate_decay=learning_rate_decay)
-        self.reset_lstm_state()
 
     def create_network_graph(self):
         input_shape = self._input_shape
@@ -56,16 +55,21 @@ class NStepA3CLSTM(TargetDQN):
             x_input_channel_firstdim = tf.placeholder(tf.uint8, [None] + input_shape, name='x-input')
             # transpose because tf wants channels on last dim and channels are passed in on 2nd dim
             x_input = tf.cast(tf.transpose(x_input_channel_firstdim, perm=[0, 2, 3, 1]), tf.float32) / 255.0
-            # transpose because tf wants channels on last dim and channels are passed in on 2nd dim
+            x_input_tp1_channel_firstdim = tf.placeholder(tf.uint8, [None] + input_shape, name='x-input-tp1')
+            x_input_tp1 = tf.cast(tf.transpose(x_input_tp1_channel_firstdim, perm=[0, 2, 3, 1]), tf.float32) / 255.0
             x_actions = tf.placeholder(tf.int32, shape=[None], name='x-actions')
             x_rewards = tf.placeholder(tf.float32, shape=[None], name='x-rewards')
+            x_last_state_terminal = tf.placeholder(tf.bool, name='x-last-state-terminal')
 
-        with tf.variable_scope('network'):
+        with tf.variable_scope('network') as var_scope:
             actor_output, critic_output, initial_lstm_state, new_lstm_state = self._network_generator(x_input, output_num)
             # flatten the critic_output NOTE: THIS IS VERY IMPORTANT
             # otherwise critic_output will be (batch_size, 1) and all ops with it and x_rewards will create a
             # tensor of shape (batch_size, batch_size)
             critic_output = tf.reshape(critic_output, [-1])
+
+            var_scope.reuse_variables()
+            _, critic_output_tp1, _, _ = self._network_generator(x_input_tp1, output_num, initial_lstm_state)
 
             # # summarize a histogram of each action output
             # for output_ind in range(output_num):
@@ -82,10 +86,14 @@ class NStepA3CLSTM(TargetDQN):
             # # add network summaries
             # summarizer.summarize_variables(train_vars=network_trainables)
 
+        with tf.name_scope('nstep_reward'):
+            estimated_reward = tf.cond(x_last_state_terminal, lambda: tf.constant([0.0]), lambda: critic_output_tp1[-1])
+            tf_nstep_rewards = tf_util.nstep_rewards_nd(x_rewards, estimated_reward, self._q_discount)
+
         # caclulate losses
         with tf.name_scope('loss'):
             with tf.name_scope('critic-reward-diff'):
-                critic_diff = tf.subtract(critic_output, x_rewards)
+                critic_diff = tf.subtract(critic_output, tf_nstep_rewards)
 
             with tf.name_scope('log-of-actor-policy'):
                 # Because of https://github.com/tensorflow/tensorflow/issues/206
@@ -143,11 +151,10 @@ class NStepA3CLSTM(TargetDQN):
             tf_summaries = summarizer.summarize(tf_learning_rate, 'scalar', 'learning-rate')
 
         # function to get network output
-        def get_output(sess, state):
-            feed_dict = {x_input_channel_firstdim: state, initial_lstm_state: self.prev_lstm_state}
+        def get_output(sess, state, curr_lstm_state):
+            feed_dict = {x_input_channel_firstdim: state, initial_lstm_state: curr_lstm_state}
             output, lstm_state = sess.run([actor_output, new_lstm_state], feed_dict=feed_dict)
-            self.prev_lstm_state = lstm_state
-            return get_action_from_probabilities(output[0])
+            return get_action_from_probabilities(output[0]), lstm_state
 
         # function to get mse feed dict
         def train_step(sess, states, actions, rewards, states_tp1, terminals, lstm_state, global_step=0, summaries=False):
@@ -157,48 +164,28 @@ class NStepA3CLSTM(TargetDQN):
             if sum(terminals) > 1:
                 raise ValueError('TD reward for mutiple terminal states in a batch is undefined')
 
-            # last state not terminal need to query target network
-            curr_reward = 0
-            if not terminals[-1]:
-                # lstm_state should be before the first state, so to get the correct lstm state we need
-                # to pass in states[0] + states_tp1[:] and grab the last one
-                all_states_plus_tp1 = np.concatenate((np.expand_dims(states[0], axis=0), states_tp1), axis=0)
-                target_feed_dict = {x_input_channel_firstdim: all_states_plus_tp1,
-                                    initial_lstm_state: lstm_state}
-                # grab last output, this is estimated reward for state_tp1[-1]
-                curr_reward = sess.run(critic_output, feed_dict=target_feed_dict)[-1]
-
-            # get bootstrap estimate of last state_tp1
-            td_rewards = []
-            for reward in reversed(rewards):
-                curr_reward = reward + self._q_discount * curr_reward
-                td_rewards.append(curr_reward)
-            # td rewards is computed backward but other lists are stored forward so need to reverse
-            td_rewards = list(reversed(td_rewards))
-            feed_dict = {x_input_channel_firstdim: states, x_actions: actions, x_rewards: td_rewards,
-                         tf_learning_rate: self.current_learning_rate, initial_lstm_state: lstm_state}
+            all_states_plus_tp1 = np.concatenate((np.expand_dims(states[0], axis=0), states_tp1), axis=0)
+            feed_dict = {x_input_channel_firstdim: states, x_actions: actions, x_rewards: rewards,
+                         x_input_tp1_channel_firstdim: all_states_plus_tp1, x_last_state_terminal: terminals[-1],
+                         initial_lstm_state: lstm_state, tf_learning_rate: self.current_learning_rate}
 
             if summaries:
                 return sess.run([tf_summaries, tf_train_step], feed_dict=feed_dict)[0]
             else:
                 return sess.run([tf_train_step], feed_dict=feed_dict)
 
-        def reset_lstm_state(new_state=None):
-            if new_state is not None:
-                self.prev_lstm_state = new_state
-            else:
-                self.prev_lstm_state = (np.zeros((1, 256)), np.zeros((1, 256)))
-
         self._get_output = get_output
         self._train_step = train_step
         self._save_variables = network_trainables
-        self.reset_lstm_state = reset_lstm_state
+
+    def get_output(self, x, lstm_state):
+        return self._get_output(self.tf_session, x, lstm_state)
 
     def train_step(self, state, action, reward, state_tp1, terminal, lstm_state=None, global_step=None, summaries=False):
         return self._train_step(self.tf_session, state, action, reward, state_tp1, terminal, lstm_state=lstm_state, global_step=global_step, summaries=summaries)
 
-    def get_lstm_state(self):
-        return deepcopy(self.prev_lstm_state)
+    def blank_lstm_state(self):
+        return (np.zeros((1, 256)), np.zeros((1, 256)))
 
 
 def get_action_from_probabilities(cnn_action_probabilities):

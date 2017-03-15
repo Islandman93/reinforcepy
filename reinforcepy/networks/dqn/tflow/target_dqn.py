@@ -15,7 +15,7 @@ class TargetDQN(BaseNetwork):
                 For dueling architectures the network_generator must return Value, Advantage outputs
     """
     def __init__(self, input_shape, output_num, algorithm_type, optimizer=None, network_generator=tf_util.create_nips_network, q_discount=0.99, loss_clipping=1,
-                 global_norm_clipping=40, initial_learning_rate=0.001, learning_rate_decay=None, target_network_update_steps=10000, **kwargs):
+                 global_norm_clipping=40.0, initial_learning_rate=0.001, learning_rate_decay=None, target_network_update_steps=10000, **kwargs):
         # setup vars needed for create_network_graph
         # if optimizer is none use default rms prop
         if optimizer is None:
