@@ -243,7 +243,7 @@ actions, and rewards.
             imgs[b] = self.imgs.take(all_indices[b:b + self.phi_length], axis=0, mode='wrap')
 
         # we want to make sure rewards is still an array
-        return imgs, self.rewards[np.newaxis, all_indices[-1]]
+        return imgs, self.rewards.take(all_indices[np.newaxis, -1], mode='wrap')
 
     def _get_random_sequential_indices(self, batch_size, max_tries, conditions=lambda x: True):
         """ Finds a set of sequential indices that does not have a terminal except (possibly) at the end
