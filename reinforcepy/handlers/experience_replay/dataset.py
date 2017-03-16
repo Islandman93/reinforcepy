@@ -205,34 +205,45 @@ actions, and rewards.
 
         return imgs[:, 0:-1], actions, rewards, imgs[:, 1:], terminals[-batch_size:]
 
-    def reward_prioritized_sequential_batch(self, batch_size, reward_probability=0.5, max_tries=100):
+    def reward_prediction_prioritized_sample(self, sample_size, reward_probability=0.5, max_tries=100):
         # check if we should return a reward
         return_reward = np.random.uniform() < reward_probability
         if return_reward:
-            all_indices, terminals = self._get_random_sequential_indices(batch_size, max_tries, conditions=lambda x: self.__reward_in_indices(x) == True)
+            inds = np.where(self.rewards != 0)[0]
+            # if no rewards, return none
+            if inds.size == 0:
+                return None, None
+            curr_tries = 0
+            while curr_tries < max_tries:
+                random_ind = np.random.choice(inds, 1)
+                # we make the reward the last thing according to paper, + 1 because arange is exclusive
+                all_indices = np.arange(random_ind-sample_size-self.phi_length+1, random_ind+1)
+                terminals = self.terminal.take(all_indices, mode='wrap')
+                # if no terminals before last one return
+                if not np.any(terminals[0:-1]):
+                    all_indices + self.bottom
+                    break
+                else:
+                    all_indices = None
+                curr_tries += 1
         else:
-            all_indices, terminals = self._get_random_sequential_indices(batch_size, max_tries, conditions=lambda x: self.__reward_in_indices(x) == False)
+            all_indices, terminals = self._get_random_sequential_indices(sample_size, max_tries, conditions=lambda x: self.__reward_in_indices(x) == False)
         if all_indices is None:
-            return None, None, None, None, None
+            return None, None
 
-        # if requested size is greater than our size
         # Allocate the response.
-        imgs = np.empty((batch_size,
-                         self.phi_length + 1,
+        imgs = np.empty((sample_size,
+                         self.phi_length,
                          self.height,
                          self.width),
                         dtype='uint8')
-        actions = np.empty((batch_size), dtype='int32')
-        rewards = np.empty((batch_size), dtype=floatX)
         # found a good start ind create sequential batch
-        for b in range(batch_size):
+        for b in range(sample_size):
             # NOTE: axis 0 is required here
-            imgs[b] = self.imgs.take(all_indices[b:b + self.phi_length + 1], axis=0, mode='wrap')
-            end_index = b + self.phi_length - 1
-            actions[b] = self.actions.take(all_indices[end_index], mode='wrap')
-            rewards[b] = self.rewards.take(all_indices[end_index], mode='wrap')
+            imgs[b] = self.imgs.take(all_indices[b:b + self.phi_length], axis=0, mode='wrap')
 
-        return imgs[:, 0:-1], actions, rewards, imgs[:, 1:], terminals[-batch_size:]
+        # we want to make sure rewards is still an array
+        return imgs, self.rewards[np.newaxis, all_indices[-1]]
 
     def _get_random_sequential_indices(self, batch_size, max_tries, conditions=lambda x: True):
         """ Finds a set of sequential indices that does not have a terminal except (possibly) at the end
@@ -317,7 +328,7 @@ def speed_tests(case='random'):
             if batch_stuff[0] is not None:
                 successful_runs += 1
         elif case == 'reward_prioritized':
-            batch_stuff = dataset.reward_prioritized_sequential_batch(3)
+            batch_stuff = dataset.reward_prediction_prioritized_sample(3)
             if batch_stuff[0] is not None:
                 successful_runs += 1
         else:
@@ -407,8 +418,8 @@ def main():
     speed_tests('sequential')
     print('reward_prioritized')
     speed_tests('reward_prioritized')
-    print('last batch')
-    test_last_batch()
+    # print('last batch')
+    # test_last_batch()
     # test_memory_usage_ok()
     # max_size_tests()
     # simple_tests()

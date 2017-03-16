@@ -88,14 +88,14 @@ class AuxiliaryRecurrentThreadLearner(QThreadLearner):
 
             # reward prediction
             if 'reward_prediction' in self.auxiliary_tasks:
-                states, _, rewards, _, _ = self.dataset.reward_prioritized_sequential_batch(self.reward_pred_batch_size)
+                states, reward_tp1 = self.dataset.reward_prediction_prioritized_sample(self.reward_pred_batch_size)
                 # reward_prioritized_sequential_batch can return none if no rewards in dataset or it can't find any
                 if states is not None:
                     if summaries:
-                        summary = self.network.train_auxiliary_reward_preditiction(states, rewards, summaries=True)
+                        summary = self.network.train_auxiliary_reward_preditiction(states, reward_tp1, summaries=True)
                         self.global_dict['summary_writer'].add_summary(summary, global_step=self.global_dict['counter'])
                     else:
-                        self.network.train_auxiliary_reward_preditiction(states, rewards, summaries=False)
+                        self.network.train_auxiliary_reward_preditiction(states, reward_tp1, summaries=False)
 
             self.steps_since_train = 0
             self.lstm_state_for_training = self.current_lstm_state

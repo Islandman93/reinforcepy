@@ -275,7 +275,7 @@ class NStepA3CUNREAL(TargetDQN):
         # reward prediction
         def train_auxiliary_reward_preditiction(sess, states, rewards, task_weight=1, summaries=False):
             feed_dict = {x_input_reward_prediction_channel_firstdim: states, x_rewards: rewards,
-                         tf_learning_rate: self.current_learning_rate}
+                         tf_learning_rate: self.current_learning_rate * task_weight}
             if summaries:
                 return sess.run([reward_prediction_loss_summary, tf_train_step_auxiliary_reward_pred], feed_dict=feed_dict)[0]
             else:

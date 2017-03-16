@@ -14,7 +14,8 @@
     "random_policy": false,
     "dataset_size": 2000,
     "batch_size": 20,
-    "reward_pred_batch_size": 3
+    "reward_pred_batch_size": 3,
+    "auxiliary_tasks": ["reward_prediction", "pixel_control", "value_replay"]
   },
   "network_args": {
     "q_discount": 0.99,
