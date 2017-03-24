@@ -208,7 +208,7 @@ class TargetDQN(BaseNetwork):
                          self._tf_learning_rate: self.current_learning_rate}
 
         if summaries:
-            return sess.run([self._tf_summaries, self._tf_train_step], feed_dict=feed_dict)[0]
+            return sess.run([self._tf_train_step, self._tf_summaries], feed_dict=feed_dict)
         else:
             return sess.run([self._tf_train_step], feed_dict=feed_dict)
 

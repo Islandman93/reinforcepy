@@ -5,14 +5,19 @@ class BaseNetwork:
     """
     Base network class, provides some tensorflow boiler plate by managing graph and session.
     Children must implement create_network_graph and set _get_output, _train_step and optionally _save_variables
-    Recurrent networks should override reset to reset their internal state
     """
-    def __init__(self, input_shape, output_num, session=None):
+    def __init__(self, input_shape, output_num, log_dir='/tmp/tensorboard/', save_interval=float('inf'),
+                 summary_interval=float('inf'), session=None):
         self._input_shape = input_shape
         self._output_num = output_num
         self.tf_session = session
         self.tf_graph = None
         self.saver = None
+        self.log_dir = log_dir if log_dir[-1] == '/' else log_dir + '/'
+        self.save_interval = save_interval
+        self.last_save_step = 0
+        self.summary_interval = summary_interval
+        self.last_summary_step = 0
 
         # these functions are created by create_network_graph
         self._save_variables = None
@@ -22,7 +27,18 @@ class BaseNetwork:
         if self.tf_session is None:
             self.init_tf_session()
             self.tf_graph = self.tf_session.graph
-        self.tf_session.run(tf.global_variables_initializer())
+            # create a summary writer
+            self.summary_writer = tf.summary.FileWriter(self.log_dir, graph=self.tf_graph)
+
+            with self.tf_graph.as_default():
+                # summaries for end of episode
+                self._tf_reward = tf.placeholder(tf.int32)
+                self._tf_reward_summary = tf.summary.scalar('reward', self._tf_reward)
+
+            variable_initializer = tf.global_variables_initializer()
+            self.tf_graph.finalize()
+
+        self.tf_session.run(variable_initializer)
 
     def init_tf_session(self):
         config = tf.ConfigProto()
@@ -38,14 +54,33 @@ class BaseNetwork:
     def get_output(self, x):
         return self._get_output(self.tf_session, x)
 
-    def train_step(self, state, action, reward, state_tp1, terminal, global_step=None, summaries=False):
-        return self._train_step(self.tf_session, state, action, reward, state_tp1, terminal, global_step=global_step, summaries=summaries)
+    def train_step(self, *args, global_step, force_summaries=False, **kwargs):
+        if self.should_save(global_step):
+            self.save(global_step)
+        write_summaries = self.should_write_summaries(global_step) or force_summaries
+        train_data = self._train_step(self.tf_session, *args, global_step=global_step, summaries=write_summaries, **kwargs)
+        summaries = train_data[-1]
+        if write_summaries:
+            self.write_summary(summaries, global_step)
+        return train_data
 
-    def save(self, *args, **kwargs):
-        self.saver.save(self.tf_session, *args, **kwargs)
+    def write_episode_reward_summary(self, reward, global_step):
+        summary = self.tf_session.run(self._tf_reward_summary, feed_dict={self._tf_reward: reward})
+        self.write_summary(summary, global_step)
+
+    def write_summary(self, summary, global_step):
+        self.summary_writer.add_summary(summary, global_step=global_step)
+        self.last_summary_step = global_step
+
+    def should_write_summaries(self, global_step):
+        return global_step > self.last_summary_step + self.summary_interval
+
+    def should_save(self, global_step):
+        return global_step > self.last_save_step + self.save_interval
+
+    def save(self, global_step, model_name='model'):
+        self.saver.save(self.tf_session, self.log_dir + model_name, global_step=global_step)
+        self.last_save_step = global_step
 
     def load(self, path):
         self.saver.restore(self.tf_session, path)
-
-    def reset(self):
-        pass
