@@ -141,7 +141,7 @@ class NStepA3C(TargetDQN):
                          tf_learning_rate: self.current_learning_rate}
 
             if summaries:
-                return sess.run([tf_summaries, tf_train_step], feed_dict=feed_dict)[0]
+                return sess.run([tf_train_step, tf_summaries], feed_dict=feed_dict)
             else:
                 return sess.run([tf_train_step], feed_dict=feed_dict)
 

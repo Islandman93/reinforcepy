@@ -170,7 +170,7 @@ class NStepA3CLSTM(TargetDQN):
                          initial_lstm_state: lstm_state, tf_learning_rate: self.current_learning_rate}
 
             if summaries:
-                return sess.run([tf_summaries, tf_train_step], feed_dict=feed_dict)[0]
+                return sess.run([tf_train_step, tf_summaries], feed_dict=feed_dict)
             else:
                 return sess.run([tf_train_step], feed_dict=feed_dict)
 
@@ -180,9 +180,6 @@ class NStepA3CLSTM(TargetDQN):
 
     def get_output(self, x, lstm_state):
         return self._get_output(self.tf_session, x, lstm_state)
-
-    def train_step(self, state, action, reward, state_tp1, terminal, lstm_state=None, global_step=None, summaries=False):
-        return self._train_step(self.tf_session, state, action, reward, state_tp1, terminal, lstm_state=lstm_state, global_step=global_step, summaries=summaries)
 
     def blank_lstm_state(self):
         return (np.zeros((1, 256)), np.zeros((1, 256)))

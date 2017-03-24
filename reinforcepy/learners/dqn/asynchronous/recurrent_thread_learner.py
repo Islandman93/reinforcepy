@@ -52,15 +52,8 @@ class RecurrentThreadLearner(QThreadLearner):
 
         # check perform gradient step
         if self.steps_since_train % self.async_update_step == 0 or terminal:
-            summaries = self.global_dict['write_summaries_this_step']
-            if summaries:
-                self.global_dict['write_summaries_this_step'] = False
-                summary = self.network.train_step(*self.get_minibatch_vars(), lstm_state=self.lstm_state_for_training,
-                                                  global_step=self.global_dict['counter'], summaries=True)
-                self.global_dict['summary_writer'].add_summary(summary, global_step=self.global_dict['counter'])
-            else:
-                self.network.train_step(*self.get_minibatch_vars(), lstm_state=self.lstm_state_for_training,
-                                        global_step=self.global_dict['counter'], summaries=False)
+            self.network.train_step(*self.get_minibatch_vars(), lstm_state=self.lstm_state_for_training,
+                                    global_step=self.global_dict['counter'])
             self.reset_minibatch()
 
             self.lstm_state_for_training = self.current_lstm_state

@@ -37,14 +37,8 @@ class ExpQThreadLearner(BaseThreadLearner, BaseQLearner):
 
         # check perform gradient step
         if self.steps_since_train % self.async_update_step == 0 or terminal:
-            summaries = self.global_dict['write_summaries_this_step']
             minibatch_vars = self.dataset.random_batch(self.batch_size)
-            if summaries:
-                self.global_dict['write_summaries_this_step'] = False
-                summary = self.network.train_step(*minibatch_vars, global_step=self.global_dict['counter'], summaries=True)
-                self.global_dict['summary_writer'].add_summary(summary, global_step=self.global_dict['counter'])
-            else:
-                self.network.train_step(*minibatch_vars, global_step=self.global_dict['counter'], summaries=False)
+            self.network.train_step(*minibatch_vars, global_step=self.global_dict['counter'])
 
         # anneal action handler
         self.anneal_random_policy()
