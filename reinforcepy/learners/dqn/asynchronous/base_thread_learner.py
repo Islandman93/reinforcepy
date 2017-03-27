@@ -52,11 +52,14 @@ class BaseThreadLearner(threading.Thread):
         while not self.global_dict['done']:
             reward = self.run_episode(self.environment)
             self.global_dict['add_reward'](reward)
-            curr_rand_val = ''
-            if self.random_policy:
-                curr_rand_val = 'Curr Rand Val: {0}'.format(self.action_handler.curr_rand_val)
-            print(self, 'Episode reward:', reward, 'Steps:', self.environment.curr_step_count,
-                  'Step count:', self.step_count, curr_rand_val)
+            self.print_episode_end_status(reward)
+
+    def print_episode_end_status(self, reward):
+        curr_rand_val = ''
+        if self.random_policy:
+            curr_rand_val = 'Curr Rand Val: {0}'.format(self.action_handler.curr_rand_val)
+        print(self, 'Episode reward:', reward, 'Steps:', self.environment.curr_step_count,
+              'Step count:', self.step_count, curr_rand_val)
 
     def update(self, *args, **kwargs):
         raise NotImplementedError('Base onestep learner does not implement update.')
