@@ -37,7 +37,7 @@ class BootstrapTargetDQN(BaseNetwork):
                 For dueling architectures the network_generator must return Value, Advantage outputs
     """
     def __init__(self, input_shape, output_num, algorithm_type, num_bootstraps, optimizer=None, network_generator=create_nips_network,
-                 q_discount=0.99, loss_clipping=1, global_norm_clipping=40.0, initial_learning_rate=0.001,
+                 q_discount=0.99, loss_clipping=1, global_norm_clipping=40.0, gradient_scaling=1.0, initial_learning_rate=0.001,
                  learning_rate_decay=None, target_network_update_steps=10000, **kwargs):
         # setup vars needed for create_network_graph
         # if optimizer is none use default rms prop
@@ -59,6 +59,7 @@ class BootstrapTargetDQN(BaseNetwork):
         self.target_network_update_steps = target_network_update_steps
         self._target_network_next_update_step = 0
         self.num_bootstraps = num_bootstraps
+        self.gradient_scaling = gradient_scaling
 
         # super calls create_network_graph
         super().__init__(input_shape, output_num, **kwargs)
@@ -137,7 +138,7 @@ class BootstrapTargetDQN(BaseNetwork):
             with tf.name_scope('network_estimated_action_tp1'):
                 self._target_bootstrap_value_online_actions = []
                 for bootstrap in range(self.num_bootstraps):
-                    argmax_tp1 = tf.argmax(self._target_bootstrap_outputs[bootstrap], axis=1)
+                    argmax_tp1 = tf.argmax(self._bootstrap_outputs_tp1[bootstrap], axis=1)
                     # Target = target_Q(s_tp1, argmax(online_Q(s_tp1)))
                     target_value_online_action = tf_util.one_hot(self._target_bootstrap_outputs[bootstrap], argmax_tp1, output_num)
                     self._target_bootstrap_value_online_actions.append(target_value_online_action)
@@ -198,20 +199,22 @@ class BootstrapTargetDQN(BaseNetwork):
             optimizer = self._optimizer_fn(learning_rate=self._tf_learning_rate)
             # only train the network vars not the target network
             gradients = optimizer.compute_gradients(error, var_list=self._tf_network_trainables)
-            # BOOTSTRAP DQN: rescale conv grads by 1 / num _bootstraps
-            rescaled_gradients = []
-            for gradient, tensor in gradients:
-                if 'conv' in gradient.name.lower():
-                    print('Rescaling {}'.format(gradient.name))
-                    with ops.colocate_with(gradient):
-                        gradient = gradient * 1 / self.num_bootstraps
-                rescaled_gradients.append((gradient, tensor))
+            if self.gradient_scaling != 1 and self.gradient_scaling is not None:
+                # BOOTSTRAP DQN: rescale conv grads by 1 / num _bootstraps
+                rescaled_gradients = []
+                for gradient, tensor in gradients:
+                    if 'conv' in gradient.name.lower():
+                        print('Rescaling {}'.format(gradient.name))
+                        with ops.colocate_with(gradient):
+                            gradient = gradient * self.gradient_scaling
+                    rescaled_gradients.append((gradient, tensor))
+                gradients = rescaled_gradients
 
             # gradients are stored as a tuple, (gradient, tensor the gradient corresponds to)
             # kinda lame that clip by global norm doesn't accept the list of tuples returned from compute_gradients
             # so we unzip then zip
-            tensors = [tensor for gradient, tensor in rescaled_gradients]
-            grads = [gradient for gradient, tensor in rescaled_gradients]
+            tensors = [tensor for gradient, tensor in gradients]
+            grads = [gradient for gradient, tensor in gradients]
             clipped_gradients, _ = tf.clip_by_global_norm(grads, self.global_norm_clipping)  # returns list[tensors], norm
             clipped_grads_tensors = zip(clipped_gradients, tensors)
             self._tf_train_step = optimizer.apply_gradients(clipped_grads_tensors)

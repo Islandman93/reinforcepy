@@ -49,7 +49,7 @@ class BaseNetwork:
         raise NotImplementedError('Children of BaseNetwork must implement create_network_graph')
 
     def _create_tf_saver(self):
-        return tf.train.Saver(var_list=self._save_variables)
+        return tf.train.Saver(var_list=self._save_variables, max_to_keep=None)
 
     def get_output(self, x):
         return self._get_output(self.tf_session, x)
@@ -69,8 +69,8 @@ class BaseNetwork:
         self.write_summary(summary, global_step)
 
     def write_summary(self, summary, global_step):
-        self.summary_writer.add_summary(summary, global_step=global_step)
         self.last_summary_step = global_step
+        self.summary_writer.add_summary(summary, global_step=global_step)
 
     def should_write_summaries(self, global_step):
         return global_step > self.last_summary_step + self.summary_interval
@@ -79,8 +79,8 @@ class BaseNetwork:
         return global_step > self.last_save_step + self.save_interval
 
     def save(self, global_step, model_name='model'):
-        self.saver.save(self.tf_session, self.log_dir + model_name, global_step=global_step)
         self.last_save_step = global_step
+        self.saver.save(self.tf_session, self.log_dir + model_name, global_step=global_step)
 
     def load(self, path):
         self.saver.restore(self.tf_session, path)
