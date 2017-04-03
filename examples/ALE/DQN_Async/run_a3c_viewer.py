@@ -9,19 +9,19 @@ from reinforcepy.learners.dqn.asynchronous.q_thread_learner import QThreadLearne
 CONFIG = json.load(open('a3c_cfg.json'))
 
 
-def main(model_path, rom_args, learner_args, network_args, num_threads, epochs, logdir, save_interval, deterministic=True):
+def main(model_path, rom_args, learner_args, network_args, num_threads, epochs, logdir, summary_interval, deterministic=False):
     # create env
     environment = ALEEnvironment(**rom_args)
 
     # create network then load
     num_actions = environment.get_num_actions()
     input_shape = [learner_args['phi_length']] + environment.get_state_shape()
-    network = NStepA3C(input_shape, num_actions, **network_args)
+    network = NStepA3C(input_shape, num_actions, deterministic=deterministic, **network_args)
     network.load(model_path)
 
     # Deterministic chooses the argmax action, not deterministic samples policy output
     # if deterministic:
-    learner = QThreadLearner(environment, network, {}, **learner_args, epsilon_annealing_start=0.01, random_policy=True, testing=True)
+    learner = QThreadLearner(environment, network, {}, **learner_args, testing=True)
 
     # run 100 episodes
     reward_list = []

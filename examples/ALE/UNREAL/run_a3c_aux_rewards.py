@@ -1,5 +1,6 @@
 import json
 import datetime
+import pickle
 from reinforcepy.environments import ALEEnvironment
 from reinforcepy.networks.dqn.tflow.unreal.nstep_a3c_aux_tasks import NStepA3CUNREAL
 from reinforcepy.learners.dqn.asynchronous.auxiliary_thread_learner import AuxiliaryThreadLearner
@@ -27,6 +28,8 @@ def main(rom_args, learner_args, network_args, num_threads, epochs, logdir, save
     plt.plot([x[1] for x in reward_list], [x[0] for x in reward_list], '.')
     plt.savefig(logdir + 'rewards.png')
     plt.show()
+    with open(logdir + 'rewards.pkl', 'wb') as out_file:
+        pickle.dump(reward_list, out_file)
     return max([x[0] for x in reward_list])
 
 

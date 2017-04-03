@@ -39,11 +39,11 @@ def create_a3c_lstm_network(input_tensor, output_num, initial_lstm_state=None):
 
 class NStepA3CLSTM(TargetDQN):
     def __init__(self, input_shape, output_num, optimizer=None, network_generator=create_a3c_lstm_network, q_discount=0.99,
-                 entropy_regularization=0.01, global_norm_clipping=40, initial_learning_rate=0.001, learning_rate_decay=None):
+                 entropy_regularization=0.01, global_norm_clipping=40, initial_learning_rate=0.001, learning_rate_decay=None, **kwargs):
         self._entropy_regularization = entropy_regularization
         super().__init__(input_shape, output_num, None, optimizer=optimizer, network_generator=network_generator,
                          q_discount=q_discount, loss_clipping=None, global_norm_clipping=global_norm_clipping,
-                         initial_learning_rate=initial_learning_rate, learning_rate_decay=learning_rate_decay)
+                         initial_learning_rate=initial_learning_rate, learning_rate_decay=learning_rate_decay, **kwargs)
 
     def create_network_graph(self):
         input_shape = self._input_shape

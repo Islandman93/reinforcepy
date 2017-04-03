@@ -4,11 +4,12 @@ import numpy as np
 from reinforcepy.environments import ALEEnvironment
 from reinforcepy.networks.dqn.tflow.target_dqn import TargetDQN
 from reinforcepy.learners.dqn.asynchronous.q_thread_learner import QThreadLearner
+import matplotlib.pyplot as plt
 
 CONFIG = json.load(open('dqn_cfg.json'))
 
 
-def main(model_path, rom_args, learner_args, network_args, num_threads, epochs, logdir, save_interval):
+def main(model_path, rom_args, learner_args, network_args, num_threads, epochs, logdir, summary_interval):
     # create env
     environment = ALEEnvironment(**rom_args)
 
@@ -32,7 +33,6 @@ def main(model_path, rom_args, learner_args, network_args, num_threads, epochs, 
     except KeyboardInterrupt:
         pass
 
-    import matplotlib.pyplot as plt
     plt.title('Max: {0}, Mean: {1}, Min: {2}'.format(max(reward_list), np.mean(reward_list), min(reward_list)))
     plt.plot(reward_list)
     plt.show()

@@ -1,27 +1,31 @@
 import json
 import datetime
+import pickle
 from reinforcepy.environments import ALEEnvironment
 from reinforcepy.networks.dqn.tflow.nstep_a3c_lstm import NStepA3CLSTM
 from reinforcepy.learners.dqn.asynchronous.recurrent_thread_learner import RecurrentThreadLearner
-from reinforcepy.learners.dqn.asynchronous.async_thread_host import AsyncThreadHost
+from reinforcepy.handlers.async_thread_host import AsyncThreadHost
 
 
-def main(rom_args, learner_args, network_args, num_threads, epochs, logdir, save_interval):
+def main(rom_args, learner_args, network_args, num_threads, epochs, logdir, summary_interval):
     # create envs for each thread
     environments = [ALEEnvironment(**rom_args) for _ in range(num_threads)]
 
     # create shared network
     num_actions = environments[0].get_num_actions()
     input_shape = [learner_args['phi_length']] + environments[0].get_state_shape()
-    network = NStepA3CLSTM(input_shape, num_actions, **network_args)
+    network = NStepA3CLSTM(input_shape, num_actions, log_dir=logdir, **network_args)
 
     # create thread host
-    thread_host = AsyncThreadHost(network, log_dir=logdir)
+    thread_host = AsyncThreadHost()
 
     # create threads
     threads = [RecurrentThreadLearner(environments[t], network, thread_host.shared_dict, **learner_args) for t in range(num_threads)]
 
-    reward_list = thread_host.run_epochs(epochs, threads, save_interval=save_interval)
+    reward_list = thread_host.run_epochs(epochs, threads, summary_interval=summary_interval)
+
+    with open(logdir + 'rewards.pkl', 'wb') as out_file:
+        pickle.dump(reward_list, out_file)
 
     import matplotlib.pyplot as plt
     plt.plot([x[1] for x in reward_list], [x[0] for x in reward_list], '.')

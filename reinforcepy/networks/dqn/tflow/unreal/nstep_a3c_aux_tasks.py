@@ -137,7 +137,7 @@ class NStepA3CUNREAL(TargetDQN):
         with tf.variable_scope('aux-deconv-output') as var_scope:
             deconv_value, deconv_advantage = create_aux_deconv_from_hidden_output(hidden3_output, output_num)
             var_scope.reuse_variables()
-            deconv_value_tp1, _ = create_aux_deconv_from_hidden_output(hidden3_output_tp1, output_num)
+            deconv_value_tp1, deconv_advantage_tp1 = create_aux_deconv_from_hidden_output(hidden3_output_tp1, output_num)
 
         with tf.name_scope('pixel-control'):
             # add input for states_tp1
@@ -166,30 +166,36 @@ class NStepA3CUNREAL(TargetDQN):
                                                                  tf.expand_dims(deconv_advantage[:, :, :, i], axis=-1))])
 
             # get the dueling Q output values, V(s) + (A(s,a) - mean(A(s)))
-            deconv_q_values = deconv_value + (deconv_advantage - tf.reduce_mean(deconv_advantage, axis=-1, keep_dims=True))
+            deconv_q_values = tf_util.dueling_to_q_vals(deconv_value, deconv_advantage)
             # shape is batch_sizex20x20xoutput_num
 
             # get deconv_q_values(s,a) from actions, sum over last dimension to get the one hot
             deconv_q_s_a = tf.reduce_sum(tf.multiply(deconv_q_values, x_actions_one_hot), axis=-1)
             # shape is batch_sizex20x20
 
-            # deconv_value_tp1[-1] is shape 20x20x1 need to convert to 1x20x20
-            deconv_value_est_reward = tf.transpose(deconv_value_tp1[-1], [2, 0, 1])
+            # deconv_tp1 get estimated reward from q_vals, max(V(s) + (A(s,a) - mean(A(s))), axis=-1)
+            deconv_q_values_tp1 = tf_util.dueling_to_q_vals(deconv_value_tp1, deconv_advantage_tp1)
+            # shape is batch_sizex20x20xoutput_num, reduce_max last dimension
+            deconv_est_reward_tp1 = tf.reduce_max(deconv_q_values_tp1, axis=-1, keep_dims=True)
+            # deconv_est_reward_tp1[-1] is shape 20x20x1 need to convert to 1x20x20
+            deconv_value_est_reward = tf.transpose(deconv_est_reward_tp1[-1], [2, 0, 1])
             estimated_reward = tf.cond(x_last_state_terminal,
                                        lambda: tf.constant(np.zeros((1, 20, 20)), dtype=tf.float32),
                                        lambda: deconv_value_est_reward)
             tf_aux_pc_nstep_rewards = tf_util.nstep_rewards_nd(reward_pixel_difference, estimated_reward,
                                                                self.aux_pc_q_discount, rewards_shape=[20, 20])
 
-            aux_pixel_loss_not_agg = tf_flatten(tf_aux_pc_nstep_rewards - deconv_q_s_a)
+            aux_pixel_loss_not_agg = tf_flatten(tf.stop_gradient(tf_aux_pc_nstep_rewards) - deconv_q_s_a)
             # not sure if original paper uses mse or mse * 0.5
             # TODO: not sure if gradients are summed or meaned
             aux_pixel_loss_weight_placeholder = tf.placeholder(tf.float32)
-            aux_pixel_loss = tf.reduce_sum(tf.reduce_mean(tf.square(aux_pixel_loss_not_agg), axis=1))
+            # aux_pixel_loss = tf.reduce_sum(tf.reduce_mean(tf.square(aux_pixel_loss_not_agg), axis=1))
+            aux_pixel_loss = tf.reduce_sum(tf.square(aux_pixel_loss_not_agg)) * aux_pixel_loss_weight_placeholder
             aux_pixel_summaries = tf.summary.merge([reward_pixel_diff_summary, deconv_value_summary,
                                                     deconv_advantage_summary, tf.summary.scalar('aux-pixel-loss', aux_pixel_loss)])
 
         with tf.name_scope('reward-prediction'):
+            cnn_encoding = tf.reshape(cnn_encoding, (1, 3*32*9*9))
             rp_fc4 = tflearn.fully_connected(cnn_encoding, 128, activation='relu', scope='rp-fc4')
             reward_prediction = tflearn.fully_connected(rp_fc4, 3, activation='softmax', scope='reward-pred-output')
             # TODO: this is hack because rewards are clipped to -1 and 1
@@ -218,7 +224,7 @@ class NStepA3CUNREAL(TargetDQN):
             # TODO: it's unknown whether we keep the same rmsprop vars for auxiliary tasks
             # we could create another optimizer that stores separate vars for each
             with tf.name_scope('auxiliary-pixel-loss-update'):
-                gradients = optimizer.compute_gradients(aux_pixel_loss * aux_pixel_loss_weight_placeholder)
+                gradients = optimizer.compute_gradients(aux_pixel_loss)
                 clipped_grads_tensors = tf_util.global_norm_clip_grads_vars(gradients, self.global_norm_clipping)
                 tf_train_step_auxiliary_pixel_loss = optimizer.apply_gradients(clipped_grads_tensors)
             # TODO: it's unknown whether we keep the same rmsprop vars for auxiliary tasks

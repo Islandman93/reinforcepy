@@ -1,7 +1,6 @@
-import recipy
 import json
 import datetime
-import matplotlib.pyplot as plt
+import pickle
 from reinforcepy.environments import ALEEnvironment
 from reinforcepy.networks.dqn.tflow.nstep_a3c import NStepA3C
 from reinforcepy.learners.dqn.asynchronous.q_thread_learner import QThreadLearner
@@ -25,6 +24,10 @@ def main(rom_args, learner_args, network_args, num_threads, epochs, logdir, summ
 
     reward_list = thread_host.run_epochs(epochs, threads, summary_interval=summary_interval)
 
+    with open(logdir + 'rewards.pkl', 'wb') as out_file:
+        pickle.dump(reward_list, out_file)
+
+    import matplotlib.pyplot as plt
     plt.plot([x[1] for x in reward_list], [x[0] for x in reward_list], '.')
     plt.savefig(logdir + 'rewards.png')
     plt.show()
