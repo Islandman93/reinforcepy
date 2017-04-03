@@ -1,9 +1,9 @@
 import numpy as np
 from reinforcepy.learners import BaseQLearner
-from .base_thread_learner import BaseThreadLearner
+from .base_async_learner import BaseAsyncLearner
 
 
-class QThreadLearner(BaseThreadLearner, BaseQLearner):
+class AsyncQLearner(BaseAsyncLearner, BaseQLearner):
     def __init__(self, *args, **kwargs):
         self.steps_since_train = 0
         super().__init__(*args, **kwargs)
@@ -30,11 +30,11 @@ class QThreadLearner(BaseThreadLearner, BaseQLearner):
         # increment counters
         self.step_count += 1
         self.steps_since_train += 1
-        self.global_dict['counter'] += 1
+        self.async_handler.increment_global_step()
 
         # check perform gradient step
         if self.steps_since_train % self.async_update_step == 0 or terminal:
-            self.network.train_step(*self.get_minibatch_vars(), global_step=self.global_dict['counter'])
+            self.network.train_step(*self.get_minibatch_vars(), global_step=self.async_handler.global_step)
             self.reset_minibatch()
             self.steps_since_train = 0
 

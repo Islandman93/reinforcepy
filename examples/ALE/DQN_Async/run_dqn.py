@@ -2,11 +2,12 @@ import sys
 import json
 import datetime
 import pickle
+import threading
 from reinforcepy.environments import ALEEnvironment
 from reinforcepy.networks.dqn.tflow.target_dqn import TargetDQN
 import reinforcepy.networks.util.tflow_util as tf_util
-from reinforcepy.learners.dqn.asynchronous.q_thread_learner import QThreadLearner
-from reinforcepy.handlers.async_thread_host import AsyncThreadHost
+from reinforcepy.learners.dqn.asynchronous import AsyncQLearner
+from reinforcepy.handlers.asynchronous import AsyncHost, MTAsyncHandler
 
 
 def main(rom_args, learner_args, network_args, algorithm_type, num_threads, epochs, logdir, summary_interval):
@@ -24,11 +25,16 @@ def main(rom_args, learner_args, network_args, algorithm_type, num_threads, epoc
     else:
         network = TargetDQN(input_shape, num_actions, algorithm_type, log_dir=logdir, **network_args)
 
-    # create thread host
-    thread_host = AsyncThreadHost()
+    # create thread host and async handlers
+    async_handler = MTAsyncHandler()
+    thread_host = AsyncHost(async_handler)
 
     # create threads
-    threads = [QThreadLearner(environments[t], network, thread_host.shared_dict, **learner_args) for t in range(num_threads)]
+    threads = []
+    for t in range(num_threads):
+        learner = AsyncQLearner(environments[t], network, async_handler, **learner_args)
+        thread = threading.Thread(target=learner.run)
+        threads.append(thread)
 
     reward_list = thread_host.run_epochs(epochs, threads, summary_interval=summary_interval)
 

@@ -26,17 +26,18 @@ class BaseNetwork:
         self.saver = self._create_tf_saver()
         if self.tf_session is None:
             self.init_tf_session()
-            self.tf_graph = self.tf_session.graph
-            # create a summary writer
-            self.summary_writer = tf.summary.FileWriter(self.log_dir, graph=self.tf_graph)
 
-            with self.tf_graph.as_default():
-                # summaries for end of episode
-                self._tf_reward = tf.placeholder(tf.int32)
-                self._tf_reward_summary = tf.summary.scalar('reward', self._tf_reward)
+        self.tf_graph = self.tf_session.graph
+        # create a summary writer
+        self.summary_writer = tf.summary.FileWriter(self.log_dir, graph=self.tf_graph)
 
-            variable_initializer = tf.global_variables_initializer()
-            self.tf_graph.finalize()
+        with self.tf_graph.as_default():
+            # summaries for end of episode
+            self._tf_reward = tf.placeholder(tf.int32)
+            self._tf_reward_summary = tf.summary.scalar('reward', self._tf_reward)
+
+        variable_initializer = tf.global_variables_initializer()
+        self.tf_graph.finalize()
 
         self.tf_session.run(variable_initializer)
 

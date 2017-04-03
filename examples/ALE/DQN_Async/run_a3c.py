@@ -1,10 +1,11 @@
 import json
 import datetime
 import pickle
+import threading
 from reinforcepy.environments import ALEEnvironment
 from reinforcepy.networks.dqn.tflow.nstep_a3c import NStepA3C
-from reinforcepy.learners.dqn.asynchronous.q_thread_learner import QThreadLearner
-from reinforcepy.handlers.async_thread_host import AsyncThreadHost
+from reinforcepy.learners.dqn.asynchronous import AsyncQLearner
+from reinforcepy.handlers.asynchronous import AsyncHost, MTAsyncHandler
 
 
 def main(rom_args, learner_args, network_args, num_threads, epochs, logdir, summary_interval):
@@ -16,13 +17,18 @@ def main(rom_args, learner_args, network_args, num_threads, epochs, logdir, summ
     input_shape = [learner_args['phi_length']] + environments[0].get_state_shape()
     network = NStepA3C(input_shape, num_actions, log_dir=logdir, **network_args)
 
-    # create thread host
-    thread_host = AsyncThreadHost()
+    # create thread host and async handlers
+    async_handler = MTAsyncHandler()
+    async_host = AsyncHost(async_handler)
 
     # create threads
-    threads = [QThreadLearner(environments[t], network, thread_host.shared_dict, **learner_args) for t in range(num_threads)]
+    threads = []
+    for t in range(num_threads):
+        learner = AsyncQLearner(environments[t], network, async_handler, **learner_args)
+        thread = threading.Thread(target=learner.run)
+        threads.append(thread)
 
-    reward_list = thread_host.run_epochs(epochs, threads, summary_interval=summary_interval)
+    reward_list = async_host.run_epochs(epochs, threads, summary_interval=summary_interval)
 
     with open(logdir + 'rewards.pkl', 'wb') as out_file:
         pickle.dump(reward_list, out_file)

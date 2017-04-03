@@ -37,9 +37,11 @@ class ActionHandler:
     action_policy : :class:`ActionPolicy`
         Specifies whether using eGreedy or adding randVals to the action value vector
     """
-    def __init__(self, num_actions: int, random_values, action_policy: ActionPolicy=ActionPolicy.eGreedy):
+    def __init__(self, num_actions: int, random_values, action_policy: ActionPolicy=ActionPolicy.eGreedy,
+                 seed=np.random.RandomState()):
         self.action_policy = action_policy
         self.num_actions = num_actions
+        self.seed = seed
 
         # check if random values is just a number
         if isinstance(random_values, numbers.Number):
@@ -81,12 +83,12 @@ class ActionHandler:
         if random:
             if self.action_policy == ActionPolicy.eGreedy:
                 # egreedy policy to choose random action_values
-                if np.random.uniform(0, 1) <= self.curr_rand_val:
-                    e_greedy = np.random.randint(self.num_actions)
+                if self.seed.uniform(0, 1) <= self.curr_rand_val:
+                    e_greedy = self.seed.randint(self.num_actions)
                     action = e_greedy
                     self.rand_count += 1
             elif self.action_policy == ActionPolicy.randVals:
-                action_values += np.random.randn(self.num_actions) * self.curr_rand_val
+                action_values += self.seed.randn(self.num_actions) * self.curr_rand_val
 
         if action is None:
             action = np.argmax(action_values)
@@ -129,8 +131,8 @@ class ActionHandler:
         """
         if self.action_policy == ActionPolicy.eGreedy:
             # egreedy policy to choose random action_values
-            if np.random.uniform(0, 1) <= self.curr_rand_val:
-                e_greedy = np.random.randint(self.num_actions)
+            if self.seed.uniform(0, 1) <= self.curr_rand_val:
+                e_greedy = self.seed.randint(self.num_actions)
                 self.rand_count += 1
                 return True, e_greedy
             else:
@@ -144,4 +146,4 @@ class ActionHandler:
         -------
         Random action index
         """
-        return np.random.randint(self.num_actions)
+        return self.seed.randint(self.num_actions)
