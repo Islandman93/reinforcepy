@@ -6,7 +6,7 @@ class AsyncHost:
     def __init__(self, async_handler):
         self.async_handler = async_handler
 
-    def run_epochs(self, num_epochs, threaded_learners, EPOCH_DEF=1000000, summary_interval=1):
+    def run_epochs(self, num_epochs, threaded_learners, EPOCH_DEF=1000000, summary_interval=1, thread_delay=0):
         """
         Args:
             summary_interval: The interval in epochs to print run stats
@@ -18,6 +18,7 @@ class AsyncHost:
         for thread in threaded_learners:
             thread.start()
             threads.append(thread)
+            time.sleep(thread_delay)
 
         last_summary = 0
         try:
