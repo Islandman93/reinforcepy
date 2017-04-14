@@ -1,3 +1,4 @@
+import time
 import numpy as np
 from reinforcepy.handlers import ActionHandler
 from reinforcepy.handlers.framebuffer import FrameBuffer
@@ -40,9 +41,12 @@ class BaseAsyncLearner(BaseLearner):
         self.reset_minibatch()
 
         self.testing = testing
+        self.start_time = 0
 
     def reset(self):
         self.reset_minibatch()
+        if self.frame_buffer is None:
+            self.frame_buffer = FrameBuffer([1, self.phi_length] + self.environment.get_state_shape())
         self.frame_buffer.reset()
 
         # initialize the buffer with states
@@ -71,6 +75,7 @@ class BaseAsyncLearner(BaseLearner):
 
         # run games until done
         try:
+            self.start_time = time.time()
             while not self.async_handler.done:
                 reward = self.run_episode(self.environment)
                 self.print_episode_end_status(reward)
@@ -83,7 +88,7 @@ class BaseAsyncLearner(BaseLearner):
         if self.random_policy:
             curr_rand_val = 'Curr Rand Val: {0}'.format(self.action_handler.curr_rand_val)
         print(self, 'Episode reward:', reward, 'Steps:', self.environment.curr_step_count,
-              'Step count:', self.step_count, curr_rand_val)
+              'Step count:', self.step_count, 'SPS:', self.step_count / (time.time() - self.start_time), curr_rand_val)
 
     def update(self, *args, **kwargs):
         raise NotImplementedError('Base onestep learner does not implement update.')
