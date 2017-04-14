@@ -7,7 +7,7 @@ class BaseNetwork:
     Children must implement create_network_graph and set _get_output, _train_step and optionally _save_variables
     """
     def __init__(self, input_shape, output_num, log_dir='/tmp/tensorboard/', save_interval=float('inf'),
-                 summary_interval=float('inf'), session=None):
+                 summary_interval=float('inf'), session=None, worker_id=0, summaries=True):
         self._input_shape = input_shape
         self._output_num = output_num
         self.tf_session = session
@@ -18,6 +18,8 @@ class BaseNetwork:
         self.last_save_step = 0
         self.summary_interval = summary_interval
         self.last_summary_step = 0
+        self.summaries = summaries
+        self.worker_id = worker_id
 
         # these functions are created by create_network_graph
         self._save_variables = None
@@ -28,13 +30,14 @@ class BaseNetwork:
             self.init_tf_session()
 
         self.tf_graph = self.tf_session.graph
-        # create a summary writer
-        self.summary_writer = tf.summary.FileWriter(self.log_dir, graph=self.tf_graph)
+        if self.summaries:
+            # create a summary writer
+            self.summary_writer = tf.summary.FileWriter(self.log_dir, graph=self.tf_graph)
 
-        with self.tf_graph.as_default():
-            # summaries for end of episode
-            self._tf_reward = tf.placeholder(tf.int32)
-            self._tf_reward_summary = tf.summary.scalar('reward', self._tf_reward)
+            with self.tf_graph.as_default():
+                # summaries for end of episode
+                self._tf_reward = tf.placeholder(tf.int32)
+                self._tf_reward_summary = tf.summary.scalar('reward', self._tf_reward)
 
         variable_initializer = tf.global_variables_initializer()
         self.tf_graph.finalize()
@@ -74,7 +77,7 @@ class BaseNetwork:
         self.summary_writer.add_summary(summary, global_step=global_step)
 
     def should_write_summaries(self, global_step):
-        return global_step > self.last_summary_step + self.summary_interval
+        return (global_step > self.last_summary_step + self.summary_interval) and self.summaries
 
     def should_save(self, global_step):
         return global_step > self.last_save_step + self.save_interval

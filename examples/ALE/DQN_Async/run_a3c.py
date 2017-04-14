@@ -1,3 +1,5 @@
+import os
+from shutil import copy2
 import json
 import datetime
 import pickle
@@ -42,6 +44,11 @@ def main(rom_args, learner_args, network_args, num_threads, epochs, logdir, summ
 
 if __name__ == '__main__':
     CONFIG = json.load(open('a3c_cfg.json'))
+    # add date time to log dir
     run_date = datetime.datetime.now().strftime("%m-%d-%Y-%H-%M")
-    CONFIG['logdir'] += '_' + run_date + '/'
+    logdir = CONFIG['logdir'] + '_' + run_date + '/'
+    CONFIG['logdir'] = logdir
+    # make log dir and copy config
+    os.makedirs(logdir)
+    copy2('a3c_cfg.json', logdir)
     main(**CONFIG)

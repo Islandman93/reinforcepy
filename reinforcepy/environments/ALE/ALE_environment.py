@@ -147,3 +147,6 @@ class ALEEnvironment(BaseEnvironment):
 
     def get_num_actions(self):
         return len(self.action_inds)
+
+    def get_step_count(self):
+        return self.curr_step_count

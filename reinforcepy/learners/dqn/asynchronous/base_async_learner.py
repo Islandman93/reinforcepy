@@ -1,5 +1,6 @@
 import time
 import numpy as np
+import time
 from reinforcepy.handlers import ActionHandler
 from reinforcepy.handlers.framebuffer import FrameBuffer
 from reinforcepy.learners.base_learner import BaseLearner
@@ -58,10 +59,10 @@ class BaseAsyncLearner(BaseLearner):
     def run(self):
         # initialize some vars that are async
         # generate or set environment and network
-        if callable(self.environment):
-            self.environment = self.environment()
         if callable(self.network):
             self.network = self.network()
+        if callable(self.environment):
+            self.environment = self.environment()
 
         self.frame_buffer = FrameBuffer([1, self.phi_length] + self.environment.get_state_shape())
         # If doing a random policy (E-greedy)
@@ -81,13 +82,14 @@ class BaseAsyncLearner(BaseLearner):
                 self.print_episode_end_status(reward)
                 self.async_handler.add_reward(reward)
         except KeyboardInterrupt:
+            self.environment.close()
             print(self, 'Exiting')
 
     def print_episode_end_status(self, reward):
         curr_rand_val = ''
         if self.random_policy:
             curr_rand_val = 'Curr Rand Val: {0}'.format(self.action_handler.curr_rand_val)
-        print(self, 'Episode reward:', reward, 'Steps:', self.environment.curr_step_count,
+        print(self, 'Episode reward:', reward, 'Steps:', self.environment.get_step_count(),
               'Step count:', self.step_count, 'SPS:', self.step_count / (time.time() - self.start_time), curr_rand_val)
 
     def update(self, *args, **kwargs):

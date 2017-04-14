@@ -45,14 +45,32 @@ class BaseEnvironment(metaclass=ABCMeta):
         """
         pass
 
-    def get_legal_actions(self):
+    def get_state_shape(self):
         """
-        Should return the legal actions that can be performed in the environment. These should never change after
+        Returns the shape of the game state
+        """
+        pass
+
+    def get_num_actions(self):
+        """
+        Should return the number of actions that can be performed in the environment. These should never change after
         initialization
 
         Returns
         -------
-        legal_actions : list
-            Legal actions for this environment
+        num_actions : int
+            Number of actions for this environment
+        """
+        pass
+
+    def close(self):
+        """
+        Deletes the environment, not required
+        """
+        pass
+
+    def get_step_count(self):
+        """
+        Returns the number of steps the environment has taken
         """
         pass

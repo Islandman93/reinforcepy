@@ -35,7 +35,7 @@ class AsyncQLearner(BaseAsyncLearner, BaseQLearner):
         # check perform gradient step
         if self.steps_since_train % self.async_update_step == 0 or terminal:
             self.network.train_step(*self.get_minibatch_vars(), global_step=self.async_handler.global_step)
-            self.reset_minibatch()
+            self.train_step_completed()
             self.steps_since_train = 0
 
         # anneal action handler
@@ -47,6 +47,9 @@ class AsyncQLearner(BaseAsyncLearner, BaseQLearner):
         self.minibatch_vars['rewards'].append(reward)
         self.minibatch_vars['state_tp1s'].append(state_tp1[0])
         self.minibatch_vars['terminals'].append(terminal)
+
+    def train_step_completed(self):
+        self.reset_minibatch()
 
     def reset_minibatch(self):
         self.minibatch_vars['states'] = []
