@@ -7,7 +7,7 @@ class BaseNetwork:
     Children must implement create_network_graph and set _get_output, _train_step and optionally _save_variables
     """
     def __init__(self, input_shape, output_num, log_dir='/tmp/tensorboard/', save_interval=float('inf'),
-                 summary_interval=float('inf'), session=None, worker_id=0, summaries=True):
+                 summary_interval=float('inf'), session=None, worker_id=0, summaries=True, cpu_only=False):
         self._input_shape = input_shape
         self._output_num = output_num
         self.tf_session = session
@@ -24,7 +24,11 @@ class BaseNetwork:
         # these functions are created by create_network_graph
         self._save_variables = None
 
-        self.create_network_graph()
+        if cpu_only:
+            with tf.device('cpu'):
+                self.create_network_graph()
+        else:
+            self.create_network_graph()
         self.saver = self._create_tf_saver()
         if self.tf_session is None:
             self.init_tf_session()
