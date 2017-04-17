@@ -5,9 +5,11 @@ from .base_environment import BaseEnvironment
 
 
 class PygameWrapper(BaseEnvironment):
-    def __init__(self, environment):
+    def __init__(self, environment, keys_to_actions, use_mouse=False):
         self.environment = environment
         self.state_shape = environment.get_state_shape()
+        self.convert_keys_to_actions = keys_to_actions
+        self.use_mouse = use_mouse
 
         pygame.init()
         self.pg_screen = pygame.display.set_mode(self.state_shape[::-1])
@@ -51,13 +53,19 @@ class PygameWrapper(BaseEnvironment):
 
     def step(self, action):
         self.display_new_screen()
-        return self.environment.step(action)
+        if self.use_mouse:
+            x_delta, y_delta = pygame.mouse.get_rel()
+            # by default get_rel is inverted
+            y_delta *= -1
+            return self.environment.step(action, (x_delta, y_delta))
+        else:
+            return self.environment.step(action)
 
     def display_new_screen(self):
         self.pg_screen.fill((0, 0, 0))
         gamescreen = self.environment.get_state()
 
-        # if grayscale convert to RGB
+        # if grayscale convert to duplicate color channels
         if len(gamescreen.shape) == 2:
             gamescreen = np.tile(gamescreen[:, :, np.newaxis], 3)
         frames = surfarray.make_surface(np.swapaxes(gamescreen, 0, 1))
