@@ -198,3 +198,24 @@ def nstep_rewards_nd(rewards_placeholder, last_reward, q_discount, rewards_shape
     # remove the first item from stack, it will be the rewards_placeholder
     # reverse the nstep rewards, they are computed backward this puts them forward looking
     return tf.reshape(tf_nstep_rewards[1:], output_shape)[::-1]
+
+
+def CreateDistributedWorker(cluster_spec, worker_number, network_generator, log_device_placement=False):
+    # Create a cluster from the parameter server and worker hosts.
+    cluster = tf.train.ClusterSpec(cluster_spec)
+
+    # Create and start a server for the local task.
+    config = tf.ConfigProto()
+    config.gpu_options.allow_growth = True
+    config.log_device_placement = log_device_placement
+    server = tf.train.Server(cluster,
+                             job_name='worker',
+                             task_index=worker_number,
+                             config=config)
+
+    session = tf.Session(server.target, config=config)
+
+    with tf.device(tf.train.replica_device_setter(cluster=cluster)):
+        network = network_generator(session=session, worker_id=worker_number)
+
+    return network
