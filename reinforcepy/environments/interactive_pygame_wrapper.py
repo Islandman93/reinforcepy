@@ -64,7 +64,7 @@ class PygameWrapper(BaseEnvironment):
             x_delta, y_delta = pygame.mouse.get_rel()
             # by default get_rel is inverted
             y_delta *= -1
-            return self.environment.step(action, (x_delta, y_delta))
+            return self.environment.step((action, x_delta))
         else:
             return self.environment.step(action)
 

@@ -1,4 +1,6 @@
 from .base_async_handler import BaseAsyncHandler
+import numpy as np
+import visdom
 
 
 # NOTE: due to pythons GIL threads are not executed at the same time,
@@ -8,6 +10,8 @@ class MTAsyncHandler(BaseAsyncHandler):
         self._global_step = starting_global_step
         self.rewards = starting_rewards
         self._done = False
+        self.vis = visdom.Visdom()
+        self.win = None
 
     @property
     def global_step(self):
@@ -25,4 +29,7 @@ class MTAsyncHandler(BaseAsyncHandler):
         self._done = new_val
 
     def add_reward(self, reward):
-        self.rewards.append((reward, self._global_step))
+        if self.win is None:
+            self.win = self.vis.line(np.asarray([reward]), np.asarray([self._global_step]))
+        else:
+            self.vis.updateTrace(np.asarray([self._global_step]), np.asarray([reward]), self.win)

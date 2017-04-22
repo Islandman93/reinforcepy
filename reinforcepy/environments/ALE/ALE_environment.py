@@ -6,19 +6,16 @@ from ale_python_interface import ALEInterface
 
 class ALEEnvironment(BaseEnvironment):
     """
-    The :class:`MinimalGameHandler` class takes care of the interface to the ALE and tries to do nothing else. It's
-    meant for advanced users who need fine control over every aspect of the process. It has many functions that are simply
-    wrappers of the underlying ALE but with pythonic names/usage.
+    The :class:`ALEEnvironment` class takes care of the interface to the ALE
 
     Parameters
     ----------
-    rom : byte string
-        Specifies the directory to load the rom from. Must be a byte string: b'dir_for_rom/rom.bin'
+    rom : string
+        Specifies the directory to load the rom from.
     display_screen : boolean
         Default False. Whether or not to show the game. True takes longer to run but can be fun to watch
     step_cap: int
-        Default None. Maximum number of steps to run in an episode. Breakout can sometimes not return terminal
-        even when game is ended. This fixes that and will return terminal after stepping above this count
+        Default None. Maximum number of steps to run in an episode.
     """
     def __init__(self, rom, resize_shape=(84, 84), skip_frame=1, repeat_action_probability=0.0,
                  step_cap=None, loss_of_life_termination=False, loss_of_life_negative_reward=False,
@@ -79,8 +76,8 @@ class ALEEnvironment(BaseEnvironment):
 
     def step(self, action):
         self.curr_step_count += 1
-        ale_action = self.action_inds[action]
-        return self._step(ale_action)
+        action = self.action_inds[action]
+        return self._step(action)
 
     def _step(self, ale_action):
         if not self.loss_of_life_termination and not self.loss_of_life_negative_reward:
@@ -146,7 +143,11 @@ class ALEEnvironment(BaseEnvironment):
             return self.ale.game_over()
 
     def get_num_actions(self):
-        return len(self.action_inds)
+        return len(self.ale.getMinimalActionSet())
 
     def get_step_count(self):
         return self.curr_step_count
+
+    def get_legal_actions(self):
+        return self.ale.getMinimalActionSet()
+
