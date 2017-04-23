@@ -7,7 +7,8 @@ class BaseNetwork:
     Children must implement create_network_graph and set _get_output, _train_step and optionally _save_variables
     """
     def __init__(self, input_shape, output_num, log_dir='/tmp/tensorboard/', save_interval=float('inf'),
-                 summary_interval=float('inf'), session=None, worker_id=0, summaries=True, cpu_only=False):
+                 summary_interval=float('inf'), session=None, worker_id=0, summaries=True, cpu_only=False,
+                 finalize_graph=True):
         self._input_shape = input_shape
         self._output_num = output_num
         self.tf_session = session
@@ -44,7 +45,8 @@ class BaseNetwork:
                 self._tf_reward_summary = tf.summary.scalar('reward', self._tf_reward)
 
         variable_initializer = tf.global_variables_initializer()
-        self.tf_graph.finalize()
+        if finalize_graph:
+            self.tf_graph.finalize()
 
         self.tf_session.run(variable_initializer)
 

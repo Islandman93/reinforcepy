@@ -10,7 +10,7 @@ def load_data(record_dir):
         for f in files:
             with open(os.path.join(root, f), 'rb') as in_file:
                 f_data = pickle.load(in_file)
-                file_data[f] = f_data
+                file_data[os.path.join(root, f)] = f_data
             print('loaded', os.path.join(root, f))
     return file_data
 
@@ -116,7 +116,7 @@ def get_minibatch(dataset, batch_size, phi_length, sequential_batch=True, RGB=Fa
         return states, actions, rewards
 
 
-def evaluate_accuracy(dataset, predict_action_fn, phi_length):
+def evaluate_accuracy(dataset, predict_action_fn, phi_length, RGB=False, flatten_RGB=False):
     stats = {}
     true_actions = np.empty(0)
     predicted_actions = np.empty(0)
@@ -125,7 +125,25 @@ def evaluate_accuracy(dataset, predict_action_fn, phi_length):
         states = []
         actions = []
         for i in range(len(ep_data['states']) - phi_length):
-            states.append(ep_data['states'][i:i + phi_length])
+            if RGB:
+                s = np.asarray(ep_data['states'][i:i + phi_length], dtype=np.uint8)
+                if not flatten_RGB:
+                    # move RGB to last channel
+                    s = np.transpose(s, [0, 2, 3, 1])
+                else:
+                    # flatten RGB and time
+                    s = s.reshape((-1,) + s.shape[2:])
+                states.append(s)
+            else:
+                states_array = np.asarray(ep_data['states'][i:i + phi_length], dtype=np.uint8)
+                # check if we saved RGB data
+                if states_array.shape[1] == 3:  # first dimension is channels
+                    states.append(states_array[:, 0])
+                elif states_array.shape[1] == 3:  # last dimension is channels
+                    states.append(states_array[:, :, :, 0])
+                # else grayscale image
+                else:
+                    states.append(states_array)
             actions.append(ep_data['actions'][i + phi_length - 1])
 
         actions = np.asarray(actions)
